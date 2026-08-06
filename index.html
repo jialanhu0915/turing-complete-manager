@@ -9,9 +9,61 @@
   </head>
   <body>
     <main id="app">
-      <h1>Turing Complete Manager</h1>
-      <p class="version">v<span id="app-version">…</span></p>
-      <p class="hint">M1 脚手架就绪。M2 起开始接入配置与备份功能。</p>
+      <section id="wizard" hidden>
+        <header>
+          <h1>Turing Complete Manager</h1>
+          <p class="step-indicator">
+            第 <span id="wizard-step">1</span> / 3 步
+          </p>
+        </header>
+
+        <div class="step" id="step-1">
+          <h2>选择存档目录</h2>
+          <p class="hint" id="save-dir-hint">检测中…</p>
+          <div class="path-row">
+            <input type="text" id="save-dir-input" spellcheck="false" />
+            <button type="button" id="save-dir-pick">浏览…</button>
+          </div>
+        </div>
+
+        <div class="step" id="step-2" hidden>
+          <h2>选择备份目录</h2>
+          <p class="hint">备份文件会存放在这里。建议选择空间充裕的位置。</p>
+          <div class="path-row">
+            <input type="text" id="backup-dir-input" spellcheck="false" />
+            <button type="button" id="backup-dir-pick">浏览…</button>
+          </div>
+        </div>
+
+        <div class="step" id="step-3" hidden>
+          <h2>选择界面语言</h2>
+          <div class="lang-row">
+            <label><input type="radio" name="lang" value="zh-CN" checked /> 简体中文</label>
+            <label><input type="radio" name="lang" value="en-US" /> English</label>
+          </div>
+        </div>
+
+        <footer class="nav">
+          <button type="button" id="wizard-prev" hidden>上一步</button>
+          <span class="spacer"></span>
+          <button type="button" id="wizard-next">下一步</button>
+          <button type="button" id="wizard-finish" hidden>完成</button>
+        </footer>
+      </section>
+
+      <section id="main" hidden>
+        <header>
+          <h1>Turing Complete Manager</h1>
+          <p class="version">v<span id="app-version">…</span></p>
+        </header>
+        <dl class="config-summary">
+          <dt>存档目录</dt><dd id="current-save-dir">…</dd>
+          <dt>备份目录</dt><dd id="current-backup-dir">…</dd>
+          <dt>界面语言</dt><dd id="current-language">…</dd>
+        </dl>
+        <p class="hint">M2 完成。主功能（备份/恢复/关卡开关）将在后续里程碑加入。</p>
+        <button type="button" id="reset-config">重置配置（重新走向导）</button>
+      </section>
     </main>
   </body>
 </html>

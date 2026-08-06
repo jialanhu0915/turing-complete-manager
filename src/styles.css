@@ -16,8 +16,8 @@ body {
   margin: 0 auto;
 }
 
-h1 {
-  margin: 0 0 8px;
+header h1 {
+  margin: 0 0 4px;
   font-size: 22px;
 }
 
@@ -27,12 +27,106 @@ h1 {
   font-size: 13px;
 }
 
+.step-indicator {
+  margin: 0 0 24px;
+  color: #6a737d;
+  font-size: 13px;
+}
+
 .hint {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-left: 3px solid #6a737d;
   background-color: #eef0f3;
   border-radius: 0 4px 4px 0;
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.hint.warn {
+  border-left-color: #d29922;
+  background-color: #fff8e1;
+  color: #7a5b00;
+}
+
+.step h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.path-row input {
+  flex: 1;
+  padding: 6px 8px;
+  font: inherit;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background-color: #fff;
+  color: inherit;
+}
+
+.lang-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lang-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.nav .spacer {
+  flex: 1;
+}
+
+button {
+  padding: 6px 14px;
+  font: inherit;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background-color: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #8c959f;
+}
+
+button:active {
+  background-color: #eef0f3;
+}
+
+.config-summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 8px;
+  margin: 0 0 16px;
+}
+
+.config-summary dt {
+  color: #6a737d;
+}
+
+.config-summary dd {
   margin: 0;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,5 +137,21 @@ h1 {
   .hint {
     background-color: #2d333b;
     border-left-color: #8b949e;
+  }
+  .hint.warn {
+    background-color: #3d2e00;
+    color: #ffd76d;
+    border-left-color: #d29922;
+  }
+  .path-row input {
+    background-color: #0d1117;
+    border-color: #30363d;
+  }
+  button {
+    background-color: #21262d;
+    border-color: #30363d;
+  }
+  button:active {
+    background-color: #2d333b;
   }
 }
