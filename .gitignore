@@ -1,0 +1,32 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Vendored WiX tools (~117MB). Run `npm run setup:wix` to populate
+# the Tauri cache from src-tauri/WixTools314/.
+/src-tauri/WixTools314/
+
+# Rust build artifacts and Tauri-generated bindings
+/src-tauri/target/
+/src-tauri/gen/

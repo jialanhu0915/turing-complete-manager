@@ -1,0 +1,47 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #1f2328;
+  background-color: #f6f7f9;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+}
+
+#app {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.version {
+  margin: 0 0 16px;
+  color: #6a737d;
+  font-size: 13px;
+}
+
+.hint {
+  padding: 12px 14px;
+  border-left: 3px solid #6a737d;
+  background-color: #eef0f3;
+  border-radius: 0 4px 4px 0;
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e6edf3;
+    background-color: #1c2128;
+  }
+  .hint {
+    background-color: #2d333b;
+    border-left-color: #8b949e;
+  }
+}
