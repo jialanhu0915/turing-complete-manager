@@ -48,7 +48,10 @@ function showMain(): void {
 }
 
 async function loadWizardDefaults(): Promise<void> {
-  const detect = await invoke<DetectSaveDir>("detect_save_dir");
+  const [detect, installDir] = await Promise.all([
+    invoke<DetectSaveDir>("detect_save_dir"),
+    invoke<string>("detect_install_dir"),
+  ]);
   const saveInput = $<HTMLInputElement>("#save-dir-input");
   saveInput.value = detect.default_path;
 
@@ -61,9 +64,10 @@ async function loadWizardDefaults(): Promise<void> {
     hint.classList.add("warn");
   }
 
-  const backupDefault =
-    detect.default_path.replace(/[\\/]Turing Complete[\\/]?$/, "") +
-    "/TuringCompleteManager/backups";
+  // 默认备份目录：与软件安装位置相同下的 backups 子目录
+  const backupDefault = installDir
+    ? installDir.replace(/[\\/]+$/, "") + "\\backups"
+    : "";
   $<HTMLInputElement>("#backup-dir-input").value = backupDefault;
 }
 

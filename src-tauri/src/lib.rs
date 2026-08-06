@@ -59,6 +59,15 @@ fn detect_save_dir() -> DetectSaveDir {
 }
 
 #[tauri::command]
+fn detect_install_dir() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(PathBuf::from))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
 fn get_config() -> Option<AppConfig> {
     load_config()
 }
@@ -78,6 +87,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             detect_save_dir,
+            detect_install_dir,
             get_config,
             set_config
         ])
