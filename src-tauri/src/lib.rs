@@ -1,45 +1,13 @@
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use serde::Serialize;
+use std::path::Path;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct AppConfig {
-    save_dir: String,
-    backup_dir: String,
-    language: String,
-}
+mod backup;
+mod config;
 
 #[derive(Serialize)]
 struct DetectSaveDir {
     default_path: String,
     exists: bool,
-}
-
-fn appdata_dir() -> Option<PathBuf> {
-    std::env::var("APPDATA").ok().map(PathBuf::from)
-}
-
-fn config_dir() -> Option<PathBuf> {
-    appdata_dir().map(|d| d.join("turing-complete-manager"))
-}
-
-fn config_path() -> Option<PathBuf> {
-    config_dir().map(|d| d.join("config.json"))
-}
-
-fn ensure_config_dir() -> Result<PathBuf, String> {
-    let dir = config_dir().ok_or_else(|| "APPDATA 环境变量未设置".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
-    Ok(dir)
-}
-
-fn load_config() -> Option<AppConfig> {
-    let path = config_path()?;
-    let bytes = std::fs::read(&path).ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-fn default_save_dir() -> Option<PathBuf> {
-    appdata_dir().map(|d| d.join("Turing Complete"))
 }
 
 #[tauri::command]
@@ -49,7 +17,7 @@ fn app_version() -> String {
 
 #[tauri::command]
 fn detect_save_dir() -> DetectSaveDir {
-    let dir = default_save_dir();
+    let dir = config::default_save_dir();
     let default_path = dir
         .as_deref()
         .map(|p| p.to_string_lossy().into_owned())
@@ -60,24 +28,77 @@ fn detect_save_dir() -> DetectSaveDir {
 
 #[tauri::command]
 fn detect_install_dir() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(PathBuf::from))
+    config::detect_install_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
 }
 
 #[tauri::command]
-fn get_config() -> Option<AppConfig> {
-    load_config()
+fn get_config() -> Option<config::AppConfig> {
+    config::load()
 }
 
 #[tauri::command]
-fn set_config(cfg: AppConfig) -> Result<(), String> {
-    let dir = ensure_config_dir()?;
-    let path = dir.join("config.json");
-    let bytes = serde_json::to_vec_pretty(&cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&path, bytes).map_err(|e| format!("写入配置失败: {e}"))
+fn set_config(cfg: config::AppConfig) -> Result<(), String> {
+    config::save(&cfg)
+}
+
+#[tauri::command]
+fn list_backups() -> Result<Vec<backup::BackupInfo>, String> {
+    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    backup::list(Path::new(&cfg.backup_dir))
+}
+
+#[tauri::command]
+fn create_backup() -> Result<backup::BackupInfo, String> {
+    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    if is_game_running_inner() {
+        return Err("检测到 Turing Complete 正在运行，请先关闭游戏再备份".to_string());
+    }
+    backup::create(Path::new(&cfg.save_dir), Path::new(&cfg.backup_dir))
+}
+
+#[tauri::command]
+fn restore_backup(name: String) -> Result<String, String> {
+    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    if is_game_running_inner() {
+        return Err("检测到 Turing Complete 正在运行，请先关闭游戏再恢复".to_string());
+    }
+    backup::restore(Path::new(&cfg.save_dir), Path::new(&cfg.backup_dir), &name)
+}
+
+#[tauri::command]
+fn delete_backup(name: String) -> Result<(), String> {
+    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    backup::delete(Path::new(&cfg.backup_dir), &name)
+}
+
+#[tauri::command]
+fn is_game_running() -> bool {
+    is_game_running_inner()
+}
+
+fn is_game_running_inner() -> bool {
+    #[cfg(windows)]
+    {
+        // 用 tasklist 检查候选 exe 名
+        for name in ["Turing Complete.exe", "TuringComplete.exe"] {
+            let output = std::process::Command::new("tasklist.exe")
+                .args(["/FI", &format!("IMAGENAME eq {}", name), "/NH"])
+                .output();
+            if let Ok(o) = output {
+                let s = String::from_utf8_lossy(&o.stdout).to_lowercase();
+                if s.contains(&name.to_lowercase()) && !s.contains("info:") {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -89,7 +110,12 @@ pub fn run() {
             detect_save_dir,
             detect_install_dir,
             get_config,
-            set_config
+            set_config,
+            list_backups,
+            create_backup,
+            restore_backup,
+            delete_backup,
+            is_game_running,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

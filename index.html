@@ -56,13 +56,39 @@
           <h1>Turing Complete Manager</h1>
           <p class="version">v<span id="app-version">…</span></p>
         </header>
-        <dl class="config-summary">
-          <dt>存档目录</dt><dd id="current-save-dir">…</dd>
-          <dt>备份目录</dt><dd id="current-backup-dir">…</dd>
-          <dt>界面语言</dt><dd id="current-language">…</dd>
-        </dl>
-        <p class="hint">M2 完成。主功能（备份/恢复/关卡开关）将在后续里程碑加入。</p>
-        <button type="button" id="reset-config">重置配置（重新走向导）</button>
+
+        <details class="config-section">
+          <summary>配置信息</summary>
+          <dl class="config-summary">
+            <dt>存档目录</dt><dd id="current-save-dir">…</dd>
+            <dt>备份目录</dt><dd id="current-backup-dir">…</dd>
+            <dt>界面语言</dt><dd id="current-language">…</dd>
+          </dl>
+          <button type="button" id="reset-config">重置配置</button>
+        </details>
+
+        <section class="backup-section">
+          <div class="backup-header">
+            <h2>备份管理</h2>
+            <span class="game-status" id="game-status">检查中…</span>
+          </div>
+          <div class="action-row">
+            <button type="button" id="create-backup" class="primary">立即备份</button>
+            <button type="button" id="refresh-list">刷新列表</button>
+          </div>
+          <table class="backup-list">
+            <thead>
+              <tr>
+                <th>备份时间</th>
+                <th>大小</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="backup-rows">
+              <tr><td colspan="3" class="empty">加载中…</td></tr>
+            </tbody>
+          </table>
+        </section>
       </section>
     </main>
   </body>
