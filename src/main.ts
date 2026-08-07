@@ -18,6 +18,14 @@ interface BackupInfo {
   size_bytes: number;
 }
 
+interface LevelRow {
+  id: string;
+  solution: string;
+  completed: boolean;
+  records: number;
+  line_index: number;
+}
+
 let cfg: AppConfig | null = null;
 let currentStep = 1;
 
@@ -233,6 +241,117 @@ async function doDelete(name: string): Promise<void> {
   }
 }
 
+// ===== 关卡编辑器 =====
+
+let levelRows: LevelRow[] = [];
+// 用户未保存的修改：lineIndex -> completed
+let levelPending = new Map<number, boolean>();
+let levelFilter = "";
+
+function pendingCount(): number {
+  return levelPending.size;
+}
+
+function renderLevelRows(): void {
+  const tbody = $("#levels-rows");
+  const filter = levelFilter.trim().toLowerCase();
+  const rows = filter
+    ? levelRows.filter((r) => r.id.toLowerCase().includes(filter))
+    : levelRows;
+
+  if (levelRows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">未读取。点击「重新读取」加载。</td></tr>`;
+    return;
+  }
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">没有匹配的关卡。</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = "";
+  for (const r of rows) {
+    const pendingVal = levelPending.get(r.line_index);
+    const checked = pendingVal !== undefined ? pendingVal : r.completed;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input type="checkbox" data-line-index="${r.line_index}" ${checked ? "checked" : ""} /></td>
+      <td>${escapeHtml(r.id)}</td>
+      <td>${escapeHtml(r.solution) || "<span class='muted'>(无)</span>"}</td>
+      <td>${r.records}</td>`;
+    tbody.appendChild(tr);
+  }
+  tbody
+    .querySelectorAll<HTMLInputElement>("input[type=checkbox][data-line-index]")
+    .forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const idx = Number(cb.dataset.lineIndex);
+        const original = levelRows.find((r) => r.line_index === idx)?.completed;
+        const nowChecked = cb.checked;
+        if (original === nowChecked) {
+          // 恢复成原始值，从 pending 中移除
+          levelPending.delete(idx);
+        } else {
+          levelPending.set(idx, nowChecked);
+        }
+        updateLevelPendingUI();
+      });
+    });
+}
+
+function updateLevelPendingUI(): void {
+  const n = pendingCount();
+  const pendingEl = $("#levels-pending");
+  pendingEl.textContent = n === 0 ? "无修改" : `待保存 ${n} 处`;
+  pendingEl.classList.toggle("warn", n > 0);
+  $<HTMLButtonElement>("#levels-save").disabled = n === 0;
+  $<HTMLButtonElement>("#levels-discard").disabled = n === 0;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function loadLevels(): Promise<void> {
+  const tbody = $("#levels-rows");
+  tbody.innerHTML = `<tr><td colspan="4" class="empty">加载中…</td></tr>`;
+  try {
+    levelRows = await invoke<LevelRow[]>("list_levels");
+    levelPending.clear();
+    renderLevelRows();
+    updateLevelPendingUI();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">加载失败：${escapeHtml(String(e))}</td></tr>`;
+  }
+}
+
+function discardLevelChanges(): void {
+  levelPending.clear();
+  renderLevelRows();
+  updateLevelPendingUI();
+}
+
+async function saveLevelChanges(): Promise<void> {
+  if (pendingCount() === 0) return;
+  const updates = Array.from(levelPending.entries()).map(([line_index, completed]) => ({
+    line_index,
+    completed,
+  }));
+  const saveBtn = $<HTMLButtonElement>("#levels-save");
+  saveBtn.disabled = true;
+  try {
+    const backupName = await invoke<string>("save_levels", { updates });
+    alert(`保存完成。\n原文件已备份：${backupName}`);
+    await loadLevels();
+  } catch (e) {
+    alert(`保存失败：${e}`);
+    saveBtn.disabled = false;
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   $("#save-dir-pick").addEventListener("click", () =>
     pickFolder($<HTMLInputElement>("#save-dir-input"))
@@ -254,6 +373,20 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#refresh-list").addEventListener("click", () => {
     refreshGameStatus();
     refreshBackupList();
+  });
+  $("#levels-reload").addEventListener("click", () => {
+    loadLevels().catch((e) => alert(`读取失败: ${e}`));
+  });
+  $("#levels-discard").addEventListener("click", () => {
+    if (pendingCount() === 0) return;
+    if (confirm(`确认放弃 ${pendingCount()} 处未保存修改？`)) discardLevelChanges();
+  });
+  $("#levels-save").addEventListener("click", () => {
+    saveLevelChanges().catch((e) => alert(`操作失败: ${e}`));
+  });
+  $("#levels-search").addEventListener("input", () => {
+    levelFilter = $<HTMLInputElement>("#levels-search").value;
+    renderLevelRows();
   });
   init().catch((e) => alert(`初始化失败: ${e}`));
 });

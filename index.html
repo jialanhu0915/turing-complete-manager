@@ -89,6 +89,35 @@
             </tbody>
           </table>
         </section>
+
+        <details class="config-section">
+          <summary>关卡编辑器（levels.txt）</summary>
+          <p class="hint">
+            切换每关的通关标志。仅修改第二列，其他字段原样保留。
+            修改前会自动备份原文件到存档目录下的 <code>levels_backups/</code>。
+          </p>
+          <div class="action-row">
+            <button type="button" id="levels-reload">重新读取</button>
+            <input type="text" id="levels-search" placeholder="过滤关卡 ID…" />
+            <span class="spacer"></span>
+            <span id="levels-pending" class="hint inline">无修改</span>
+            <button type="button" id="levels-discard" disabled>放弃修改</button>
+            <button type="button" id="levels-save" class="primary" disabled>保存修改</button>
+          </div>
+          <table class="backup-list">
+            <thead>
+              <tr>
+                <th style="width:60px">通关</th>
+                <th>关卡 ID</th>
+                <th>方案</th>
+                <th style="width:90px">记录数</th>
+              </tr>
+            </thead>
+            <tbody id="levels-rows">
+              <tr><td colspan="4" class="empty">点击「重新读取」加载。</td></tr>
+            </tbody>
+          </table>
+        </details>
       </section>
     </main>
   </body>

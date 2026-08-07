@@ -5,6 +5,7 @@ use std::path::Path;
 
 mod backup;
 mod config;
+mod levels;
 
 #[derive(Serialize)]
 struct DetectSaveDir {
@@ -80,6 +81,20 @@ fn is_game_running() -> bool {
     is_game_running_inner()
 }
 
+#[tauri::command]
+fn list_levels() -> Result<Vec<levels::LevelRow>, String> {
+    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    levels::load_levels(Path::new(&cfg.save_dir))
+}
+
+#[tauri::command]
+fn save_levels(updates: Vec<levels::LevelUpdate>) -> Result<String, String> {
+    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    // 允许游戏中保存：levels.txt 支持热修改。
+    // 注意：游戏中保存可能被游戏后续写入覆盖，操作需自行承担。
+    levels::save_levels(Path::new(&cfg.save_dir), &updates)
+}
+
 fn is_game_running_inner() -> bool {
     #[cfg(windows)]
     {
@@ -118,6 +133,8 @@ pub fn run() {
             restore_backup,
             delete_backup,
             is_game_running,
+            list_levels,
+            save_levels,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
