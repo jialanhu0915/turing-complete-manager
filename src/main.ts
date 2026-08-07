@@ -38,15 +38,23 @@ function fmtDate(iso: string): string {
   return iso.replace("T", " ");
 }
 
+// 游戏状态短期缓存：避免每次刷新都启动 tasklist 子进程（~200ms 开销）
+const GAME_STATUS_TTL_MS = 5000;
+let gameStatusCache: { value: boolean; ts: number } | null = null;
+
 async function init(): Promise<void> {
-  cfg = await invoke<AppConfig | null>("get_config");
+  // 并行获取配置和版本号，少一轮 RTT
+  const [configResult, version] = await Promise.all([
+    invoke<AppConfig | null>("get_config"),
+    invoke<string>("app_version").catch(() => "?"),
+  ]);
+  cfg = configResult;
+  $("#app-version").textContent = version;
   if (cfg) {
-    showMain();
+    await showMain();
   } else {
     await showWizard();
   }
-  const v = await invoke<string>("app_version").catch(() => "?");
-  $("#app-version").textContent = v;
 }
 
 async function showWizard(): Promise<void> {
@@ -62,8 +70,8 @@ async function showMain(): Promise<void> {
   $("#current-save-dir").textContent = cfg!.save_dir;
   $("#current-backup-dir").textContent = cfg!.backup_dir;
   $("#current-language").textContent = cfg!.language;
-  await refreshGameStatus();
-  await refreshBackupList();
+  // 并行：游戏状态 + 备份列表
+  await Promise.all([refreshGameStatus(), refreshBackupList()]);
 }
 
 async function loadWizardDefaults(): Promise<void> {
@@ -140,10 +148,18 @@ async function resetConfig(): Promise<void> {
   await showWizard();
 }
 
-async function refreshGameStatus(): Promise<void> {
+async function refreshGameStatus(force = false): Promise<void> {
   const el = $("#game-status");
+  const now = Date.now();
+  if (!force && gameStatusCache && now - gameStatusCache.ts < GAME_STATUS_TTL_MS) {
+    const running = gameStatusCache.value;
+    el.textContent = running ? "游戏：运行中" : "游戏：未运行";
+    el.classList.toggle("warn", running);
+    return;
+  }
   try {
     const running = await invoke<boolean>("is_game_running");
+    gameStatusCache = { value: running, ts: now };
     el.textContent = running ? "游戏：运行中" : "游戏：未运行";
     el.classList.toggle("warn", running);
   } catch {

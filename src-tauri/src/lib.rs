@@ -1,4 +1,6 @@
 use serde::Serialize;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 
 mod backup;
@@ -81,10 +83,12 @@ fn is_game_running() -> bool {
 fn is_game_running_inner() -> bool {
     #[cfg(windows)]
     {
-        // 用 tasklist 检查候选 exe 名
+        // CREATE_NO_WINDOW 避免 tasklist 弹出黑色命令行窗口
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         for name in ["Turing Complete.exe", "TuringComplete.exe"] {
             let output = std::process::Command::new("tasklist.exe")
                 .args(["/FI", &format!("IMAGENAME eq {}", name), "/NH"])
+                .creation_flags(CREATE_NO_WINDOW)
                 .output();
             if let Ok(o) = output {
                 let s = String::from_utf8_lossy(&o.stdout).to_lowercase();
