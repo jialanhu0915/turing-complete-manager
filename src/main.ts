@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   applyI18n,
+  getLocale,
   setLocale,
   t,
   tErr,
@@ -35,6 +36,11 @@ interface LevelRow {
   completed: boolean;
   records: number;
   line_index: number;
+}
+
+interface LevelName {
+  en: string;
+  "zh-CN": string;
 }
 
 let cfg: AppConfig | null = null;
@@ -325,8 +331,17 @@ async function doDelete(name: string): Promise<void> {
 // ===== 关卡编辑器 =====
 
 let levelRows: LevelRow[] = [];
+let levelNames = new Map<string, LevelName>();
 let levelPending = new Map<number, boolean>();
 let levelFilter = "";
+
+/** 关卡 ID 对应在当前语言下的显示名。无翻译时回退 ID。 */
+function displayName(id: string): string {
+  const n = levelNames.get(id);
+  if (!n) return id;
+  const locale = getLocale();
+  return (locale === "zh-CN" ? n["zh-CN"] : n.en) || id;
+}
 
 function pendingCount(): number {
   return levelPending.size;
@@ -336,7 +351,10 @@ function renderLevelRows(): void {
   const tbody = $("#levels-rows");
   const filter = levelFilter.trim().toLowerCase();
   const rows = filter
-    ? levelRows.filter((r) => r.id.toLowerCase().includes(filter))
+    ? levelRows.filter((r) => {
+        const name = displayName(r.id).toLowerCase();
+        return r.id.toLowerCase().includes(filter) || name.includes(filter);
+      })
     : levelRows;
 
   if (levelRows.length === 0) {
@@ -358,7 +376,7 @@ function renderLevelRows(): void {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="checkbox" data-line-index="${r.line_index}" ${checked ? "checked" : ""} /></td>
-      <td>${escapeHtml(r.id)}</td>
+      <td><div class="level-name">${escapeHtml(displayName(r.id))}</div><div class="muted level-id">${escapeHtml(r.id)}</div></td>
       <td>${solutionCell}</td>
       <td>${r.records}</td>`;
     tbody.appendChild(tr);
@@ -405,7 +423,13 @@ async function loadLevels(): Promise<void> {
   const tbody = $("#levels-rows");
   tbody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(t("LEVELS_LOADING"))}</td></tr>`;
   try {
-    levelRows = await invoke<LevelRow[]>("list_levels");
+    // 拉关卡行 + 翻译表（后者失败不致命 —— 显示会回退到 ID）
+    const [rows, names] = await Promise.all([
+      invoke<LevelRow[]>("list_levels"),
+      invoke<Record<string, LevelName>>("list_level_names"),
+    ]);
+    levelRows = rows;
+    levelNames = new Map(Object.entries(names));
     levelPending.clear();
     renderLevelRows();
     updateLevelPendingUI();

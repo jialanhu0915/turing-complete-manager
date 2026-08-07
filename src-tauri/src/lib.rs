@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 mod backup;
 mod config;
 mod levels;
+mod translations;
 
 #[derive(Serialize)]
 struct DetectSaveDir {
@@ -97,6 +98,11 @@ fn save_levels(updates: Vec<levels::LevelUpdate>) -> Result<String, String> {
     levels::save_levels(Path::new(&cfg.save_dir), &updates)
 }
 
+#[tauri::command]
+fn list_level_names() -> translations::LevelNames {
+    translations::load_level_names()
+}
+
 fn is_game_running_inner() -> bool {
     #[cfg(windows)]
     {
@@ -144,6 +150,7 @@ pub fn run() {
             is_game_running,
             list_levels,
             save_levels,
+            list_level_names,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

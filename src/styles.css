@@ -196,6 +196,15 @@ button.primary:hover:not(:disabled) {
   font-style: italic;
 }
 
+.level-name {
+  font-weight: 500;
+}
+
+.level-id {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
 #levels-search {
   padding: 6px 8px;
   font: inherit;
