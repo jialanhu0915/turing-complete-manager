@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import {
+  applyI18n,
+  setLocale,
+  t,
+  tErr,
+  type Locale,
+} from "./i18n";
 
 interface AppConfig {
   save_dir: string;
@@ -46,7 +53,6 @@ function fmtBytes(n: number): string {
 }
 
 function fmtDate(iso: string): string {
-  // 已经是本地时间 ISO 字符串，把 T 换成空格更好读
   return iso.replace("T", " ");
 }
 
@@ -54,14 +60,28 @@ function fmtDate(iso: string): string {
 const GAME_STATUS_TTL_MS = 5000;
 let gameStatusCache: { value: boolean; ts: number } | null = null;
 
+/** 重新渲染所有依赖语言的 UI 部分。静态部分由 applyI18n() 一次扫描完成。 */
+function rerenderDynamic(): void {
+  $("#wizard-step-indicator").textContent = t("WIZARD_STEP_OF", { current: currentStep });
+  fillAutoBackupForm();
+  if (cfg) $("#current-language").textContent = cfg.language;
+  $("#game-status").textContent = t("GAME_LOADING");
+  $("#game-status").classList.remove("warn");
+  refreshGameStatus(true);
+  refreshBackupList();
+  renderLevelRows();
+  updateLevelPendingUI();
+}
+
 async function init(): Promise<void> {
-  // 并行获取配置和版本号，少一轮 RTT
   const [configResult, version] = await Promise.all([
     invoke<AppConfig | null>("get_config"),
     invoke<string>("app_version").catch(() => "?"),
   ]);
   cfg = configResult;
+  setLocale((cfg?.language as Locale) ?? "zh-CN");
   $("#app-version").textContent = version;
+  applyI18n();
   if (cfg) {
     await showMain();
   } else {
@@ -82,8 +102,8 @@ async function showMain(): Promise<void> {
   $("#current-save-dir").textContent = cfg!.save_dir;
   $("#current-backup-dir").textContent = cfg!.backup_dir;
   $("#current-language").textContent = cfg!.language;
+  $<HTMLSelectElement>("#lang-select").value = cfg!.language;
   fillAutoBackupForm();
-  // 并行：游戏状态 + 备份列表
   await Promise.all([refreshGameStatus(), refreshBackupList()]);
 }
 
@@ -103,11 +123,11 @@ function readAutoBackupForm(): {
   const interval = Number($<HTMLInputElement>("#auto-interval").value);
   const keep = Number($<HTMLInputElement>("#auto-keep").value);
   if (!Number.isFinite(interval) || interval < 1 || interval > 1440) {
-    alert("间隔必须在 1-1440 分钟之间");
+    alert(t("AUTO_INTERVAL_ERR"));
     return null;
   }
   if (!Number.isFinite(keep) || keep < 1 || keep > 999) {
-    alert("保留个数必须在 1-999 之间");
+    alert(t("AUTO_KEEP_ERR"));
     return null;
   }
   return { enabled, interval, keep };
@@ -126,14 +146,14 @@ async function saveAutoBackup(): Promise<void> {
   const btn = $<HTMLButtonElement>("#auto-save");
   const status = $("#auto-status");
   btn.disabled = true;
-  status.textContent = "保存中…";
+  status.textContent = t("AUTO_SAVING");
   try {
     await invoke("set_config", { cfg: next });
     cfg = next;
-    status.textContent = "✓ 已保存";
+    status.textContent = t("AUTO_SAVED");
     status.classList.remove("warn");
   } catch (e) {
-    status.textContent = `✗ ${e}`;
+    status.textContent = `${t("AUTO_FAILED_PREFIX")}${tErr(String(e))}`;
     status.classList.add("warn");
   } finally {
     btn.disabled = false;
@@ -150,10 +170,10 @@ async function loadWizardDefaults(): Promise<void> {
 
   const hint = $("#save-dir-hint");
   if (detect.exists) {
-    hint.textContent = "✓ 已检测到存档目录";
+    hint.textContent = t("WIZARD_SAVE_OK");
     hint.classList.remove("warn");
   } else {
-    hint.textContent = "⚠ 未在该路径检测到存档目录，请确认游戏至少启动过一次";
+    hint.textContent = t("WIZARD_SAVE_MISSING");
     hint.classList.add("warn");
   }
 
@@ -168,7 +188,7 @@ function showStep(n: number): void {
   for (let i = 1; i <= 3; i++) {
     $(`#step-${i}`).hidden = i !== n;
   }
-  $("#wizard-step").textContent = String(n);
+  $("#wizard-step-indicator").textContent = t("WIZARD_STEP_OF", { current: n });
   $("#wizard-prev").hidden = n === 1;
   $("#wizard-next").hidden = n === 3;
   $("#wizard-finish").hidden = n !== 3;
@@ -196,7 +216,7 @@ async function finishWizard(): Promise<void> {
   const saveDir = $<HTMLInputElement>("#save-dir-input").value.trim();
   const backupDir = $<HTMLInputElement>("#backup-dir-input").value.trim();
   if (!saveDir || !backupDir) {
-    alert("存档目录和备份目录都不能为空");
+    alert(t("WIZARD_EMPTY_PATH"));
     return;
   }
   cfg = {
@@ -212,7 +232,7 @@ async function finishWizard(): Promise<void> {
 }
 
 async function resetConfig(): Promise<void> {
-  if (!confirm("确认重置配置？存档本身不会被修改，只是回到首次启动向导。")) return;
+  if (!confirm(t("CONFIG_RESET_CONFIRM"))) return;
   cfg = null;
   await showWizard();
 }
@@ -222,27 +242,27 @@ async function refreshGameStatus(force = false): Promise<void> {
   const now = Date.now();
   if (!force && gameStatusCache && now - gameStatusCache.ts < GAME_STATUS_TTL_MS) {
     const running = gameStatusCache.value;
-    el.textContent = running ? "游戏：运行中" : "游戏：未运行";
+    el.textContent = running ? t("GAME_RUNNING") : t("GAME_NOT_RUNNING");
     el.classList.toggle("warn", running);
     return;
   }
   try {
     const running = await invoke<boolean>("is_game_running");
     gameStatusCache = { value: running, ts: now };
-    el.textContent = running ? "游戏：运行中" : "游戏：未运行";
+    el.textContent = running ? t("GAME_RUNNING") : t("GAME_NOT_RUNNING");
     el.classList.toggle("warn", running);
   } catch {
-    el.textContent = "游戏状态未知";
+    el.textContent = t("GAME_UNKNOWN");
   }
 }
 
 async function refreshBackupList(): Promise<void> {
   const tbody = $("#backup-rows");
-  tbody.innerHTML = `<tr><td colspan="3" class="empty">加载中…</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(t("BACKUP_LOADING"))}</td></tr>`;
   try {
     const list = await invoke<BackupInfo[]>("list_backups");
     if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="empty">暂无备份。点击「立即备份」创建第一个。</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(t("BACKUP_EMPTY"))}</td></tr>`;
       return;
     }
     tbody.innerHTML = "";
@@ -252,8 +272,8 @@ async function refreshBackupList(): Promise<void> {
         <td>${fmtDate(b.created_at)}</td>
         <td>${fmtBytes(b.size_bytes)}</td>
         <td class="row-actions">
-          <button type="button" class="action-restore" data-name="${b.name}">恢复</button>
-          <button type="button" class="action-delete" data-name="${b.name}">删除</button>
+          <button type="button" class="action-restore" data-name="${escapeAttr(b.name)}">${escapeHtml(t("BACKUP_RESTORE"))}</button>
+          <button type="button" class="action-delete" data-name="${escapeAttr(b.name)}">${escapeHtml(t("BACKUP_DELETE"))}</button>
         </td>`;
       tbody.appendChild(tr);
     }
@@ -264,7 +284,7 @@ async function refreshBackupList(): Promise<void> {
       btn.addEventListener("click", () => doDelete(btn.dataset.name!));
     });
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="3" class="empty">加载失败：${e}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(tErr(String(e)))}</td></tr>`;
   }
 }
 
@@ -275,37 +295,36 @@ async function doCreate(): Promise<void> {
     await invoke<BackupInfo>("create_backup");
     await refreshBackupList();
   } catch (e) {
-    alert(`备份失败：${e}`);
+    alert(t("BACKUP_CREATE_FAILED", { err: tErr(String(e)) }));
   } finally {
     btn.disabled = false;
   }
 }
 
 async function doRestore(name: string): Promise<void> {
-  if (!confirm(`确认恢复到备份「${name}」？\n恢复前会自动保存当前状态，可以再回退。`)) return;
+  if (!confirm(t("BACKUP_RESTORE_CONFIRM", { name }))) return;
   try {
     const autoName = await invoke<string>("restore_backup", { name });
-    alert(`恢复完成。\n回退用快照：${autoName}`);
+    alert(t("BACKUP_RESTORE_DONE", { name: autoName }));
     await refreshBackupList();
   } catch (e) {
-    alert(`恢复失败：${e}`);
+    alert(t("BACKUP_RESTORE_FAILED", { err: tErr(String(e)) }));
   }
 }
 
 async function doDelete(name: string): Promise<void> {
-  if (!confirm(`确认删除备份「${name}」？此操作不可撤销。`)) return;
+  if (!confirm(t("BACKUP_DELETE_CONFIRM", { name }))) return;
   try {
     await invoke("delete_backup", { name });
     await refreshBackupList();
   } catch (e) {
-    alert(`删除失败：${e}`);
+    alert(t("BACKUP_DELETE_FAILED", { err: tErr(String(e)) }));
   }
 }
 
 // ===== 关卡编辑器 =====
 
 let levelRows: LevelRow[] = [];
-// 用户未保存的修改：lineIndex -> completed
 let levelPending = new Map<number, boolean>();
 let levelFilter = "";
 
@@ -321,11 +340,11 @@ function renderLevelRows(): void {
     : levelRows;
 
   if (levelRows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty">未读取。点击「重新读取」加载。</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(t("LEVELS_EMPTY"))}</td></tr>`;
     return;
   }
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty">没有匹配的关卡。</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(t("LEVELS_NO_MATCH"))}</td></tr>`;
     return;
   }
 
@@ -333,11 +352,14 @@ function renderLevelRows(): void {
   for (const r of rows) {
     const pendingVal = levelPending.get(r.line_index);
     const checked = pendingVal !== undefined ? pendingVal : r.completed;
+    const solutionCell = r.solution
+      ? escapeHtml(r.solution)
+      : `<span class="muted">${escapeHtml(t("LEVELS_NO_SOLUTION"))}</span>`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="checkbox" data-line-index="${r.line_index}" ${checked ? "checked" : ""} /></td>
       <td>${escapeHtml(r.id)}</td>
-      <td>${escapeHtml(r.solution) || "<span class='muted'>(无)</span>"}</td>
+      <td>${solutionCell}</td>
       <td>${r.records}</td>`;
     tbody.appendChild(tr);
   }
@@ -349,7 +371,6 @@ function renderLevelRows(): void {
         const original = levelRows.find((r) => r.line_index === idx)?.completed;
         const nowChecked = cb.checked;
         if (original === nowChecked) {
-          // 恢复成原始值，从 pending 中移除
           levelPending.delete(idx);
         } else {
           levelPending.set(idx, nowChecked);
@@ -362,7 +383,7 @@ function renderLevelRows(): void {
 function updateLevelPendingUI(): void {
   const n = pendingCount();
   const pendingEl = $("#levels-pending");
-  pendingEl.textContent = n === 0 ? "无修改" : `待保存 ${n} 处`;
+  pendingEl.textContent = n === 0 ? t("LEVELS_NO_PENDING") : t("LEVELS_PENDING", { n });
   pendingEl.classList.toggle("warn", n > 0);
   $<HTMLButtonElement>("#levels-save").disabled = n === 0;
   $<HTMLButtonElement>("#levels-discard").disabled = n === 0;
@@ -376,16 +397,20 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function escapeAttr(s: string): string {
+  return escapeHtml(s);
+}
+
 async function loadLevels(): Promise<void> {
   const tbody = $("#levels-rows");
-  tbody.innerHTML = `<tr><td colspan="4" class="empty">加载中…</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(t("LEVELS_LOADING"))}</td></tr>`;
   try {
     levelRows = await invoke<LevelRow[]>("list_levels");
     levelPending.clear();
     renderLevelRows();
     updateLevelPendingUI();
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty">加载失败：${escapeHtml(String(e))}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(tErr(String(e)))}</td></tr>`;
   }
 }
 
@@ -405,11 +430,26 @@ async function saveLevelChanges(): Promise<void> {
   saveBtn.disabled = true;
   try {
     const backupName = await invoke<string>("save_levels", { updates });
-    alert(`保存完成。\n原文件已备份：${backupName}`);
+    alert(t("LEVELS_SAVE_DONE", { name: backupName }));
     await loadLevels();
   } catch (e) {
-    alert(`保存失败：${e}`);
+    alert(t("LEVELS_SAVE_FAILED", { err: tErr(String(e)) }));
     saveBtn.disabled = false;
+  }
+}
+
+async function switchLanguage(newLang: Locale): Promise<void> {
+  if (!cfg) return;
+  setLocale(newLang);
+  applyI18n();
+  rerenderDynamic();
+  if (cfg.language !== newLang) {
+    cfg = { ...cfg, language: newLang };
+    try {
+      await invoke("set_config", { cfg });
+    } catch (e) {
+      console.error("failed to persist language:", e);
+    }
   }
 }
 
@@ -423,38 +463,41 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#wizard-prev").addEventListener("click", () => showStep(currentStep - 1));
   $("#wizard-next").addEventListener("click", () => showStep(currentStep + 1));
   $("#wizard-finish").addEventListener("click", () => {
-    finishWizard().catch((e) => alert(`保存失败: ${e}`));
+    finishWizard().catch((e) => alert(t("OP_FAILED", { err: tErr(String(e)) })));
   });
   $("#reset-config").addEventListener("click", () => {
-    resetConfig().catch((e) => alert(`重置失败: ${e}`));
+    resetConfig().catch((e) => alert(t("CONFIG_RESET_FAILED", { err: tErr(String(e)) })));
   });
   $("#create-backup").addEventListener("click", () => {
-    doCreate().catch((e) => alert(`操作失败: ${e}`));
+    doCreate().catch((e) => alert(t("OP_FAILED", { err: tErr(String(e)) })));
   });
   $("#refresh-list").addEventListener("click", () => {
     refreshGameStatus();
     refreshBackupList();
   });
   $("#levels-reload").addEventListener("click", () => {
-    loadLevels().catch((e) => alert(`读取失败: ${e}`));
+    loadLevels().catch((e) => alert(t("LEVELS_LOAD_FAILED_ALERT", { err: tErr(String(e)) })));
   });
   $("#levels-discard").addEventListener("click", () => {
     if (pendingCount() === 0) return;
-    if (confirm(`确认放弃 ${pendingCount()} 处未保存修改？`)) discardLevelChanges();
+    if (confirm(t("LEVELS_DISCARD_CONFIRM", { n: pendingCount() }))) discardLevelChanges();
   });
   $("#levels-save").addEventListener("click", () => {
-    saveLevelChanges().catch((e) => alert(`操作失败: ${e}`));
+    saveLevelChanges().catch((e) => alert(t("OP_FAILED", { err: tErr(String(e)) })));
   });
   $("#levels-search").addEventListener("input", () => {
     levelFilter = $<HTMLInputElement>("#levels-search").value;
     renderLevelRows();
   });
   $("#auto-save").addEventListener("click", () => {
-    saveAutoBackup().catch((e) => alert(`保存失败: ${e}`));
+    saveAutoBackup().catch((e) => alert(t("AUTO_SAVE_FAILED", { err: tErr(String(e)) })));
   });
-  // 后台自动备份完成后刷新列表
+  $("#lang-select").addEventListener("change", () => {
+    const v = $<HTMLSelectElement>("#lang-select").value as Locale;
+    switchLanguage(v).catch((e) => console.error("switchLanguage failed:", e));
+  });
   listen("auto-backup-done", () => {
     refreshBackupList();
   }).catch((e) => console.error("listen failed:", e));
-  init().catch((e) => alert(`初始化失败: ${e}`));
+  init().catch((e) => alert(t("INIT_FAILED", { err: tErr(String(e)) })));
 });

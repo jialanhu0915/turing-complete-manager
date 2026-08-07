@@ -4,143 +4,144 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Turing Complete Manager</title>
+    <title data-i18n="APP_TITLE">Turing Complete Manager</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
     <main id="app">
       <section id="wizard" hidden>
         <header>
-          <h1>Turing Complete Manager</h1>
+          <h1 data-i18n="APP_TITLE">Turing Complete Manager</h1>
           <p class="step-indicator">
-            第 <span id="wizard-step">1</span> / 3 步
+            <span id="wizard-step-indicator">第 1 / 3 步</span>
           </p>
         </header>
 
         <div class="step" id="step-1">
-          <h2>选择存档目录</h2>
-          <p class="hint" id="save-dir-hint">检测中…</p>
+          <h2 data-i18n="WIZARD_SAVE_TITLE">选择存档目录</h2>
+          <p class="hint" id="save-dir-hint">…</p>
           <div class="path-row">
             <input type="text" id="save-dir-input" spellcheck="false" />
-            <button type="button" id="save-dir-pick">浏览…</button>
+            <button type="button" id="save-dir-pick" data-i18n="WIZARD_BROWSE">浏览…</button>
           </div>
         </div>
 
         <div class="step" id="step-2" hidden>
-          <h2>选择备份目录</h2>
-          <p class="hint">默认与软件安装目录相同（其下的 <code>backups</code> 子目录）。</p>
+          <h2 data-i18n="WIZARD_BACKUP_TITLE">选择备份目录</h2>
+          <p class="hint" data-i18n="WIZARD_BACKUP_HINT">默认与软件安装目录相同（其下的 <code>backups</code> 子目录）。</p>
           <div class="path-row">
             <input type="text" id="backup-dir-input" spellcheck="false" />
-            <button type="button" id="backup-dir-pick">浏览…</button>
+            <button type="button" id="backup-dir-pick" data-i18n="WIZARD_BROWSE">浏览…</button>
           </div>
         </div>
 
         <div class="step" id="step-3" hidden>
-          <h2>选择界面语言</h2>
+          <h2 data-i18n="WIZARD_LANG_TITLE">选择界面语言</h2>
           <div class="lang-row">
-            <label><input type="radio" name="lang" value="zh-CN" checked /> 简体中文</label>
-            <label><input type="radio" name="lang" value="en-US" /> English</label>
+            <label><input type="radio" name="lang" value="zh-CN" checked /> <span data-i18n="WIZARD_LANG_ZH">简体中文</span></label>
+            <label><input type="radio" name="lang" value="en-US" /> <span data-i18n="WIZARD_LANG_EN">English</span></label>
           </div>
         </div>
 
         <footer class="nav">
-          <button type="button" id="wizard-prev" hidden>上一步</button>
+          <button type="button" id="wizard-prev" hidden data-i18n="WIZARD_PREV">上一步</button>
           <span class="spacer"></span>
-          <button type="button" id="wizard-next">下一步</button>
-          <button type="button" id="wizard-finish" hidden>完成</button>
+          <button type="button" id="wizard-next" data-i18n="WIZARD_NEXT">下一步</button>
+          <button type="button" id="wizard-finish" hidden data-i18n="WIZARD_FINISH">完成</button>
         </footer>
       </section>
 
       <section id="main" hidden>
         <header>
-          <h1>Turing Complete Manager</h1>
+          <h1 data-i18n="APP_TITLE">Turing Complete Manager</h1>
           <p class="version">v<span id="app-version">…</span></p>
         </header>
 
         <details class="config-section">
-          <summary>配置</summary>
+          <summary data-i18n="CONFIG_TITLE">配置</summary>
           <dl class="config-summary">
-            <dt>存档目录</dt><dd id="current-save-dir">…</dd>
-            <dt>备份目录</dt><dd id="current-backup-dir">…</dd>
-            <dt>界面语言</dt><dd id="current-language">…</dd>
+            <dt data-i18n="CONFIG_SAVE_DIR">存档目录</dt><dd id="current-save-dir">…</dd>
+            <dt data-i18n="CONFIG_BACKUP_DIR">备份目录</dt><dd id="current-backup-dir">…</dd>
+            <dt data-i18n="CONFIG_LANGUAGE">界面语言</dt><dd id="current-language">…</dd>
           </dl>
-          <button type="button" id="reset-config">重置配置</button>
+          <div class="action-row" id="lang-switcher">
+            <span data-i18n="CONFIG_LANGUAGE">界面语言</span>
+            <select id="lang-select">
+              <option value="zh-CN" data-i18n="CONFIG_LANG_ZH">简体中文</option>
+              <option value="en-US" data-i18n="CONFIG_LANG_EN">English</option>
+            </select>
+          </div>
+          <button type="button" id="reset-config" data-i18n="CONFIG_RESET">重置配置</button>
 
           <hr />
 
-          <h3 class="sub-config-title">自动备份</h3>
-          <p class="hint">
-            软件运行期间按间隔自动备份。游戏中也会执行（热备）。
-            超出保留个数时最旧的备份会被自动清理。
-          </p>
+          <h3 class="sub-config-title" data-i18n="AUTO_TITLE">自动备份</h3>
+          <p class="hint" data-i18n="AUTO_HINT">软件运行期间按间隔自动备份。游戏中也会执行（热备）。超出保留个数时最旧的备份会被自动清理。</p>
           <div class="auto-grid">
             <label class="auto-row">
               <input type="checkbox" id="auto-enabled" />
-              <span>启用自动备份</span>
+              <span data-i18n="AUTO_ENABLED">启用自动备份</span>
             </label>
             <label class="auto-row">
-              <span>间隔（分钟）</span>
+              <span data-i18n="AUTO_INTERVAL">间隔（分钟）</span>
               <input type="number" id="auto-interval" min="1" max="1440" />
             </label>
             <label class="auto-row">
-              <span>保留个数</span>
+              <span data-i18n="AUTO_KEEP">保留个数</span>
               <input type="number" id="auto-keep" min="1" max="999" />
             </label>
           </div>
           <div class="action-row">
-            <button type="button" id="auto-save" class="primary">保存自动备份设置</button>
+            <button type="button" id="auto-save" class="primary" data-i18n="AUTO_SAVE">保存自动备份设置</button>
             <span class="hint inline" id="auto-status">—</span>
           </div>
         </details>
 
         <section class="backup-section">
           <div class="backup-header">
-            <h2>备份管理</h2>
-            <span class="game-status" id="game-status">检查中…</span>
+            <h2 data-i18n="BACKUP_TITLE">备份管理</h2>
+            <span class="game-status" id="game-status">…</span>
           </div>
           <div class="action-row">
-            <button type="button" id="create-backup" class="primary">立即备份</button>
-            <button type="button" id="refresh-list">刷新列表</button>
+            <button type="button" id="create-backup" class="primary" data-i18n="BACKUP_NOW">立即备份</button>
+            <button type="button" id="refresh-list" data-i18n="BACKUP_REFRESH">刷新列表</button>
           </div>
           <table class="backup-list">
             <thead>
               <tr>
-                <th>备份时间</th>
-                <th>大小</th>
-                <th>操作</th>
+                <th data-i18n="HEADER_TIME">备份时间</th>
+                <th data-i18n="HEADER_SIZE">大小</th>
+                <th data-i18n="HEADER_ACTIONS">操作</th>
               </tr>
             </thead>
             <tbody id="backup-rows">
-              <tr><td colspan="3" class="empty">加载中…</td></tr>
+              <tr><td colspan="3" class="empty" data-i18n="BACKUP_LOADING">加载中…</td></tr>
             </tbody>
           </table>
         </section>
 
         <details class="config-section">
-          <summary>关卡编辑器（levels.txt）</summary>
-          <p class="hint">
-            切换每关的通关标志。仅修改第二列，其他字段原样保留。
-            修改前会自动备份原文件到存档目录下的 <code>levels_backups/</code>。
-          </p>
+          <summary data-i18n="LEVELS_TITLE">关卡编辑器（levels.txt）</summary>
+          <p class="hint" data-i18n="LEVELS_HINT">切换每关的通关标志。仅修改第二列，其他字段原样保留。修改前会自动备份原文件到存档目录下的 <code>levels_backups/</code>。</p>
           <div class="action-row">
-            <button type="button" id="levels-reload">重新读取</button>
-            <input type="text" id="levels-search" placeholder="过滤关卡 ID…" />
+            <button type="button" id="levels-reload" data-i18n="LEVELS_RELOAD">重新读取</button>
+            <input type="text" id="levels-search" data-i18n-placeholder="LEVELS_SEARCH_PH" placeholder="过滤关卡 ID…" />
             <span class="spacer"></span>
-            <span id="levels-pending" class="hint inline">无修改</span>
-            <button type="button" id="levels-discard" disabled>放弃修改</button>
-            <button type="button" id="levels-save" class="primary" disabled>保存修改</button>
+            <span id="levels-pending" class="hint inline" data-i18n="LEVELS_NO_PENDING">无修改</span>
+            <button type="button" id="levels-discard" disabled data-i18n="LEVELS_DISCARD">放弃修改</button>
+            <button type="button" id="levels-save" class="primary" disabled data-i18n="LEVELS_SAVE">保存修改</button>
           </div>
           <table class="backup-list">
             <thead>
               <tr>
-                <th style="width:60px">通关</th>
-                <th>关卡 ID</th>
-                <th>方案</th>
-                <th style="width:90px">记录数</th>
+                <th style="width:60px" data-i18n="LEVELS_HEADER_DONE">通关</th>
+                <th data-i18n="LEVELS_HEADER_ID">关卡 ID</th>
+                <th data-i18n="LEVELS_HEADER_SOL">方案</th>
+                <th style="width:90px" data-i18n="LEVELS_HEADER_RECORDS">记录数</th>
               </tr>
             </thead>
             <tbody id="levels-rows">
-              <tr><td colspan="4" class="empty">点击「重新读取」加载。</td></tr>
+              <tr><td colspan="4" class="empty" data-i18n="LEVELS_EMPTY">点击「重新读取」加载。</td></tr>
             </tbody>
           </table>
         </details>

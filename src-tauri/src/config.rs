@@ -34,8 +34,8 @@ pub fn config_path() -> Option<PathBuf> {
 }
 
 pub fn ensure_config_dir() -> Result<PathBuf, String> {
-    let dir = config_dir().ok_or_else(|| "APPDATA 环境变量未设置".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
+    let dir = config_dir().ok_or_else(|| "APPDATA_NOT_SET".to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("CONFIG_DIR_FAILED|{e}"))?;
     Ok(dir)
 }
 
@@ -49,7 +49,7 @@ pub fn save(cfg: &AppConfig) -> Result<(), String> {
     let dir = ensure_config_dir()?;
     let path = dir.join("config.json");
     let bytes = serde_json::to_vec_pretty(cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&path, bytes).map_err(|e| format!("写入配置失败: {e}"))
+    std::fs::write(&path, bytes).map_err(|e| format!("CONFIG_WRITE_FAILED|{e}"))
 }
 
 pub fn default_save_dir() -> Option<PathBuf> {

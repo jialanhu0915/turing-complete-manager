@@ -37,13 +37,13 @@ fn to_forward_slash(p: &Path) -> String {
 
 fn zip_dir(source_dir: &Path, zip_path: &Path) -> Result<(), String> {
     if !source_dir.exists() {
-        return Err(format!("存档目录不存在: {}", source_dir.display()));
+        return Err(format!("SAVE_DIR_NOT_FOUND|{}", source_dir.display()));
     }
     if !source_dir.is_dir() {
-        return Err(format!("存档路径不是目录: {}", source_dir.display()));
+        return Err(format!("SAVE_DIR_NOT_DIR|{}", source_dir.display()));
     }
 
-    let file = std::fs::File::create(zip_path).map_err(|e| format!("创建 zip 失败: {e}"))?;
+    let file = std::fs::File::create(zip_path).map_err(|e| format!("ZIP_CREATE_FAILED|{e}"))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
@@ -53,7 +53,7 @@ fn zip_dir(source_dir: &Path, zip_path: &Path) -> Result<(), String> {
         .unwrap_or_else(|| "root".to_string());
 
     for entry in WalkDir::new(source_dir).follow_links(false) {
-        let entry = entry.map_err(|e| format!("遍历存档目录失败: {e}"))?;
+        let entry = entry.map_err(|e| format!("WALK_FAILED|{e}"))?;
         let path = entry.path();
         let relative = path.strip_prefix(source_dir).unwrap();
         let rel_str = to_forward_slash(relative);
@@ -65,25 +65,25 @@ fn zip_dir(source_dir: &Path, zip_path: &Path) -> Result<(), String> {
 
         if path.is_file() {
             zip.start_file(&zip_path, options)
-                .map_err(|e| format!("写入 zip 条目失败: {e}"))?;
-            let mut f = std::fs::File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
-            std::io::copy(&mut f, &mut zip).map_err(|e| format!("压缩失败: {e}"))?;
+                .map_err(|e| format!("ZIP_FILE_FAILED|{e}"))?;
+            let mut f = std::fs::File::open(path).map_err(|e| format!("OPEN_FILE_FAILED|{e}"))?;
+            std::io::copy(&mut f, &mut zip).map_err(|e| format!("COPY_FAILED|{e}"))?;
         } else if path != source_dir {
             zip.add_directory(&zip_path, options)
-                .map_err(|e| format!("写入 zip 目录失败: {e}"))?;
+                .map_err(|e| format!("ZIP_DIR_FAILED|{e}"))?;
         }
     }
 
-    zip.finish().map_err(|e| format!("完成 zip 失败: {e}"))?;
+    zip.finish().map_err(|e| format!("ZIP_FINISH_FAILED|{e}"))?;
     Ok(())
 }
 
 fn unzip_into(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
-    let file = std::fs::File::open(zip_path).map_err(|e| format!("打开 zip 失败: {e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|e| format!("读取 zip 失败: {e}"))?;
+    let file = std::fs::File::open(zip_path).map_err(|e| format!("ZIP_OPEN_FAILED|{e}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|e| format!("ZIP_READ_FAILED|{e}"))?;
 
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| format!("解析条目失败: {e}"))?;
+        let mut entry = archive.by_index(i).map_err(|e| format!("ZIP_ENTRY_FAILED|{e}"))?;
         let name = entry.name().to_string();
         let relative = match name.split_once('/') {
             Some((_, rest)) => rest,
@@ -95,20 +95,20 @@ fn unzip_into(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
         let outpath = dest_dir.join(relative.replace('/', "\\"));
 
         if entry.is_dir() {
-            std::fs::create_dir_all(&outpath).map_err(|e| format!("创建目录失败: {e}"))?;
+            std::fs::create_dir_all(&outpath).map_err(|e| format!("MKDIR_FAILED|{e}"))?;
         } else {
             if let Some(p) = outpath.parent() {
-                std::fs::create_dir_all(p).map_err(|e| format!("创建父目录失败: {e}"))?;
+                std::fs::create_dir_all(p).map_err(|e| format!("MKDIR_PARENT_FAILED|{e}"))?;
             }
             let mut outfile =
-                std::fs::File::create(&outpath).map_err(|e| format!("创建文件失败: {e}"))?;
+                std::fs::File::create(&outpath).map_err(|e| format!("CREATE_FILE_FAILED|{e}"))?;
             let mut buf = Vec::new();
             entry
                 .read_to_end(&mut buf)
-                .map_err(|e| format!("读取 zip 条目失败: {e}"))?;
+                .map_err(|e| format!("READ_ENTRY_FAILED|{e}"))?;
             outfile
                 .write_all(&buf)
-                .map_err(|e| format!("写入文件失败: {e}"))?;
+                .map_err(|e| format!("ZIP_WRITE_FAILED|{e}"))?;
         }
     }
 
@@ -134,7 +134,7 @@ fn file_info(zip_path: &Path) -> BackupInfo {
 }
 
 pub fn create(save_dir: &Path, backup_dir: &Path) -> Result<BackupInfo, String> {
-    std::fs::create_dir_all(backup_dir).map_err(|e| format!("创建备份目录失败: {e}"))?;
+    std::fs::create_dir_all(backup_dir).map_err(|e| format!("BACKUP_DIR_FAILED|{e}"))?;
     let name = now_filename();
     let zip_path = backup_dir.join(&name);
     zip_dir(save_dir, &zip_path)?;
@@ -160,12 +160,12 @@ pub fn list(backup_dir: &Path) -> Result<Vec<BackupInfo>, String> {
 pub fn delete(backup_dir: &Path, name: &str) -> Result<(), String> {
     let path = backup_dir.join(name);
     if !path.exists() {
-        return Err(format!("备份不存在: {}", name));
+        return Err(format!("BACKUP_NOT_FOUND|{}", name));
     }
     if path.extension().map(|e| e != "zip").unwrap_or(true) {
-        return Err("只允许删除 .zip 文件".to_string());
+        return Err("DELETE_NOT_ZIP".to_string());
     }
-    std::fs::remove_file(&path).map_err(|e| format!("删除失败: {e}"))
+    std::fs::remove_file(&path).map_err(|e| format!("DELETE_FAILED|{e}"))
 }
 
 /// 恢复指定备份。返回自动保存的快照名（用于回退）。
@@ -176,7 +176,7 @@ pub fn restore(
 ) -> Result<String, String> {
     let zip_path = backup_dir.join(name);
     if !zip_path.exists() {
-        return Err(format!("备份不存在: {}", name));
+        return Err(format!("BACKUP_NOT_FOUND|{}", name));
     }
 
     // 自动保存当前状态
@@ -185,7 +185,7 @@ pub fn restore(
     zip_dir(save_dir, &auto_path)?;
 
     // 恢复
-    std::fs::create_dir_all(save_dir).map_err(|e| format!("创建存档目录失败: {e}"))?;
+    std::fs::create_dir_all(save_dir).map_err(|e| format!("MKDIR_FAILED|{e}"))?;
     unzip_into(&zip_path, save_dir)?;
 
     Ok(auto_name)

@@ -50,31 +50,31 @@ fn set_config(cfg: config::AppConfig) -> Result<(), String> {
 
 #[tauri::command]
 fn list_backups() -> Result<Vec<backup::BackupInfo>, String> {
-    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     backup::list(Path::new(&cfg.backup_dir))
 }
 
 #[tauri::command]
 fn create_backup() -> Result<backup::BackupInfo, String> {
-    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     if is_game_running_inner() {
-        return Err("检测到 Turing Complete 正在运行，请先关闭游戏再备份".to_string());
+        return Err("GAME_RUNNING_BACKUP".to_string());
     }
     backup::create(Path::new(&cfg.save_dir), Path::new(&cfg.backup_dir))
 }
 
 #[tauri::command]
 fn restore_backup(name: String) -> Result<String, String> {
-    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     if is_game_running_inner() {
-        return Err("检测到 Turing Complete 正在运行，请先关闭游戏再恢复".to_string());
+        return Err("GAME_RUNNING_RESTORE".to_string());
     }
     backup::restore(Path::new(&cfg.save_dir), Path::new(&cfg.backup_dir), &name)
 }
 
 #[tauri::command]
 fn delete_backup(name: String) -> Result<(), String> {
-    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     backup::delete(Path::new(&cfg.backup_dir), &name)
 }
 
@@ -85,13 +85,13 @@ fn is_game_running() -> bool {
 
 #[tauri::command]
 fn list_levels() -> Result<Vec<levels::LevelRow>, String> {
-    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     levels::load_levels(Path::new(&cfg.save_dir))
 }
 
 #[tauri::command]
 fn save_levels(updates: Vec<levels::LevelUpdate>) -> Result<String, String> {
-    let cfg = config::load().ok_or("未配置。请先完成首次启动向导。")?;
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     // 允许游戏中保存：levels.txt 支持热修改。
     // 注意：游戏中保存可能被游戏后续写入覆盖，操作需自行承担。
     levels::save_levels(Path::new(&cfg.save_dir), &updates)

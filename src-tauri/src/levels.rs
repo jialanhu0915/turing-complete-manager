@@ -50,7 +50,7 @@ fn unquote(s: &str) -> &str {
 /// 游戏关卡 ID 由开发者定义、方案名 UI 不允许逗号，所以安全。
 pub fn load_levels(save_dir: &Path) -> Result<Vec<LevelRow>, String> {
     let path = save_dir.join("levels.txt");
-    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取 levels.txt 失败: {e}"))?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("LEVELS_READ_FAILED|{e}"))?;
 
     let mut rows = Vec::new();
     for (i, line) in raw.lines().enumerate() {
@@ -60,11 +60,11 @@ pub fn load_levels(save_dir: &Path) -> Result<Vec<LevelRow>, String> {
         }
         let parts: Vec<&str> = line.split(',').collect();
         if parts.len() < 3 {
-            return Err(format!("levels.txt 第 {} 行格式错误（少于 3 列）", i + 1));
+            return Err(format!("LEVELS_ROW_FORMAT|{}", i + 1));
         }
         let id = unquote(parts[0]).to_string();
         let completed = parse_bool(parts[1])
-            .ok_or_else(|| format!("levels.txt 第 {} 行第二列不是 true/false", i + 1))?;
+            .ok_or_else(|| format!("LEVELS_BAD_BOOL|{}", i + 1))?;
         let solution = unquote(parts[2]).to_string();
         let records = if parts.len() >= 4 {
             unquote(parts[3]).split('|').filter(|s| !s.is_empty()).count() as u32
@@ -110,26 +110,26 @@ fn apply_updates_to_text(raw: &str, updates: &[(usize, bool)]) -> String {
 /// 返回备份文件名。
 pub fn save_levels(save_dir: &Path, updates: &[LevelUpdate]) -> Result<String, String> {
     if updates.is_empty() {
-        return Err("没有要保存的修改".to_string());
+        return Err("NO_LEVEL_CHANGES".to_string());
     }
 
     let path = save_dir.join("levels.txt");
-    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取 levels.txt 失败: {e}"))?;
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("LEVELS_READ_FAILED|{e}"))?;
 
     // 自动备份
     let backup_dir = save_dir.join("levels_backups");
-    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {e}"))?;
+    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("LEVELS_BACKUP_DIR_FAILED|{e}"))?;
     let backup_name = Local::now()
         .format("levels_%Y-%m-%d_%H%M%S.txt")
         .to_string();
     std::fs::write(backup_dir.join(&backup_name), &raw)
-        .map_err(|e| format!("写入备份失败: {e}"))?;
+        .map_err(|e| format!("LEVELS_BACKUP_WRITE_FAILED|{e}"))?;
 
     // 应用修改（保证 line_index 与 updates 都合法）
     let pairs: Vec<(usize, bool)> = updates.iter().map(|u| (u.line_index, u.completed)).collect();
     let new_text = apply_updates_to_text(&raw, &pairs);
 
-    std::fs::write(&path, new_text).map_err(|e| format!("写入 levels.txt 失败: {e}"))?;
+    std::fs::write(&path, new_text).map_err(|e| format!("LEVELS_WRITE_FAILED|{e}"))?;
     Ok(backup_name)
 }
 
