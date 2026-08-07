@@ -1,11 +1,24 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+fn default_interval() -> u32 {
+    30
+}
+fn default_keep() -> u32 {
+    20
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub save_dir: String,
     pub backup_dir: String,
     pub language: String,
+    #[serde(default)]
+    pub auto_backup_enabled: bool,
+    #[serde(default = "default_interval")]
+    pub auto_backup_interval_min: u32,
+    #[serde(default = "default_keep")]
+    pub auto_backup_keep: u32,
 }
 
 pub fn appdata_dir() -> Option<PathBuf> {

@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
 interface AppConfig {
   save_dir: string;
   backup_dir: string;
   language: string;
+  auto_backup_enabled: boolean;
+  auto_backup_interval_min: number;
+  auto_backup_keep: number;
 }
 
 interface DetectSaveDir {
@@ -78,8 +82,62 @@ async function showMain(): Promise<void> {
   $("#current-save-dir").textContent = cfg!.save_dir;
   $("#current-backup-dir").textContent = cfg!.backup_dir;
   $("#current-language").textContent = cfg!.language;
+  fillAutoBackupForm();
   // 并行：游戏状态 + 备份列表
   await Promise.all([refreshGameStatus(), refreshBackupList()]);
+}
+
+function fillAutoBackupForm(): void {
+  if (!cfg) return;
+  $<HTMLInputElement>("#auto-enabled").checked = cfg.auto_backup_enabled;
+  $<HTMLInputElement>("#auto-interval").value = String(cfg.auto_backup_interval_min);
+  $<HTMLInputElement>("#auto-keep").value = String(cfg.auto_backup_keep);
+}
+
+function readAutoBackupForm(): {
+  enabled: boolean;
+  interval: number;
+  keep: number;
+} | null {
+  const enabled = $<HTMLInputElement>("#auto-enabled").checked;
+  const interval = Number($<HTMLInputElement>("#auto-interval").value);
+  const keep = Number($<HTMLInputElement>("#auto-keep").value);
+  if (!Number.isFinite(interval) || interval < 1 || interval > 1440) {
+    alert("间隔必须在 1-1440 分钟之间");
+    return null;
+  }
+  if (!Number.isFinite(keep) || keep < 1 || keep > 999) {
+    alert("保留个数必须在 1-999 之间");
+    return null;
+  }
+  return { enabled, interval, keep };
+}
+
+async function saveAutoBackup(): Promise<void> {
+  if (!cfg) return;
+  const form = readAutoBackupForm();
+  if (!form) return;
+  const next: AppConfig = {
+    ...cfg,
+    auto_backup_enabled: form.enabled,
+    auto_backup_interval_min: form.interval,
+    auto_backup_keep: form.keep,
+  };
+  const btn = $<HTMLButtonElement>("#auto-save");
+  const status = $("#auto-status");
+  btn.disabled = true;
+  status.textContent = "保存中…";
+  try {
+    await invoke("set_config", { cfg: next });
+    cfg = next;
+    status.textContent = "✓ 已保存";
+    status.classList.remove("warn");
+  } catch (e) {
+    status.textContent = `✗ ${e}`;
+    status.classList.add("warn");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function loadWizardDefaults(): Promise<void> {
@@ -145,6 +203,9 @@ async function finishWizard(): Promise<void> {
     save_dir: saveDir,
     backup_dir: backupDir,
     language: readSelectedLang(),
+    auto_backup_enabled: false,
+    auto_backup_interval_min: 30,
+    auto_backup_keep: 20,
   };
   await invoke("set_config", { cfg });
   await showMain();
@@ -388,5 +449,12 @@ window.addEventListener("DOMContentLoaded", () => {
     levelFilter = $<HTMLInputElement>("#levels-search").value;
     renderLevelRows();
   });
+  $("#auto-save").addEventListener("click", () => {
+    saveAutoBackup().catch((e) => alert(`保存失败: ${e}`));
+  });
+  // 后台自动备份完成后刷新列表
+  listen("auto-backup-done", () => {
+    refreshBackupList();
+  }).catch((e) => console.error("listen failed:", e));
   init().catch((e) => alert(`初始化失败: ${e}`));
 });

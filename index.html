@@ -58,13 +58,39 @@
         </header>
 
         <details class="config-section">
-          <summary>配置信息</summary>
+          <summary>配置</summary>
           <dl class="config-summary">
             <dt>存档目录</dt><dd id="current-save-dir">…</dd>
             <dt>备份目录</dt><dd id="current-backup-dir">…</dd>
             <dt>界面语言</dt><dd id="current-language">…</dd>
           </dl>
           <button type="button" id="reset-config">重置配置</button>
+
+          <hr />
+
+          <h3 class="sub-config-title">自动备份</h3>
+          <p class="hint">
+            软件运行期间按间隔自动备份。游戏中也会执行（热备）。
+            超出保留个数时最旧的备份会被自动清理。
+          </p>
+          <div class="auto-grid">
+            <label class="auto-row">
+              <input type="checkbox" id="auto-enabled" />
+              <span>启用自动备份</span>
+            </label>
+            <label class="auto-row">
+              <span>间隔（分钟）</span>
+              <input type="number" id="auto-interval" min="1" max="1440" />
+            </label>
+            <label class="auto-row">
+              <span>保留个数</span>
+              <input type="number" id="auto-keep" min="1" max="999" />
+            </label>
+          </div>
+          <div class="action-row">
+            <button type="button" id="auto-save" class="primary">保存自动备份设置</button>
+            <span class="hint inline" id="auto-status">—</span>
+          </div>
         </details>
 
         <section class="backup-section">
