@@ -85,17 +85,15 @@ fn is_game_running_inner() -> bool {
     {
         // CREATE_NO_WINDOW 避免 tasklist 弹出黑色命令行窗口
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        for name in ["Turing Complete.exe", "TuringComplete.exe"] {
-            let output = std::process::Command::new("tasklist.exe")
-                .args(["/FI", &format!("IMAGENAME eq {}", name), "/NH"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-            if let Ok(o) = output {
-                let s = String::from_utf8_lossy(&o.stdout).to_lowercase();
-                if s.contains(&name.to_lowercase()) && !s.contains("info:") {
-                    return true;
-                }
-            }
+        const NAME: &str = "Turing Complete.exe";
+        let output = std::process::Command::new("tasklist.exe")
+            .args(["/FI", &format!("IMAGENAME eq {}", NAME), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        if let Ok(o) = output {
+            let s = String::from_utf8_lossy(&o.stdout);
+            // 找到：包含进程名；未找到：包含 "INFO: No tasks..."
+            return s.contains(NAME) && !s.contains("INFO:");
         }
         false
     }
