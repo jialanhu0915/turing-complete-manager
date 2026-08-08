@@ -45,7 +45,23 @@ status: 已审（compile.dll 已重做签名调研）
 
 ### `compile` 函数签名分析
 
-通过 `objdump -d` 看 prologue（`0x2fdde4370`）：
+**完整反汇编已迁移到** [`compile-signature.md`](compile-signature.md)。摘要：
+
+```c
+void compile(
+    void*   out_buf,    // rcx:  40 字节输出结构体
+    void*   src_str,    // rdx:  Nim string {int64 length, ptr char_data}
+    int32_t mode,       // r8:   仅低 32 位使用
+    int32_t flags       // r9:   仅低 32 位使用
+);
+```
+
+**关键发现**：
+- `compile` 内部把 **27361 字节的 Nim DSL 标准库前缀**拼到用户源码前面，再编译成机器码
+- 输出 40 字节结构体，5 个字段（详细见 `compile-signature.md`）
+- 必须先调 `NimMain()` 初始化；多次调需要锁
+
+**粗略 prologue**（`0x2fdde4370`）：
 
 ```asm
 00000002fdde4370 <compile>:
@@ -141,7 +157,13 @@ proc tcc_compile(source_code: string, sim_state: pointer, state_len: cint,
 
 Rust 端 `libloading::Library::new("shim.dll")?` + 调用 `tcc_compile`。
 
-### 节区结构
+## 后续建议（更新版）
+
+1. ❌ ~~IDA / Ghidra 静态分析 `compile.dll` 完整签名~~ — 已用 `objdump` 完整推断（4 参数 + 40 字节输出结构体），见 `compile-signature.md`
+2. ✅ **写 Nim C-ABI shim DLL**（推荐路径）—— 内部封装 `compile.dll::compile`，把 40 字节输出透传给 Rust
+3. ⚠️ **JIT 函数指针调用约定未完全确定** —— 需要写 Nim 测试程序间接验证，或上 IDA 跟 `passes/jit/jit.nim` 的代码生成模式
+4. ⚠️ **simulator runtime 在 exe 里静态链接**——`handle_request_compile_and_run` 不可直接调；只能复用 compile.dll 的 JIT 输出
+5. **下一步**：shim.nim（Phase B+C），只透传编译结果，不执行仿真；后续再单独解决"如何调用 JIT 函数指针"
 
 | 节 | VA | VSize | 推测用途 |
 |---|---|---|---|
