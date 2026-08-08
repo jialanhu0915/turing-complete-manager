@@ -94,6 +94,58 @@ fn is_game_available() -> bool {
     game::is_available()
 }
 
+/// Result of a verify_circuit invocation (parsed from the verify CLI's JSON).
+#[derive(serde::Deserialize, serde::Serialize)]
+struct VerifyResult {
+    ok: bool,
+    test_result: u64,
+    cycles_run: i64,
+    error: Option<String>,
+}
+
+/// Validate a saved circuit by spawning the `verify` CLI in a fresh process
+/// (so `compile.dll`'s single-shot constraint doesn't bleed across requests).
+/// Gated on `game::is_available()` — the verify CLI needs the game's
+/// `compile.dll` and `campaign/<level>/test.si`.
+#[tauri::command]
+fn verify_circuit(level_id: String, scheme_id: String) -> Result<VerifyResult, String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    if !game::is_available() {
+        return Err("GAME_NOT_DETECTED".into());
+    }
+    let game_dir = game::detect().ok_or("GAME_NOT_DETECTED")?;
+
+    // Locate the verify binary next to the running app binary (dev layout:
+    // both main and verify are produced in the same target/debug/).
+    let exe = std::env::current_exe().map_err(|e| format!("VERIFY_LOCATE|{e}"))?;
+    let verify = exe.with_file_name("verify.exe");
+    if !verify.is_file() {
+        return Err(format!(
+            "VERIFY_NOT_FOUND|{}",
+            verify.display()
+        ));
+    }
+
+    let output = std::process::Command::new(&verify)
+        .arg("--game")
+        .arg(&game_dir)
+        .arg("--save")
+        .arg(&cfg.save_dir)
+        .arg("--level")
+        .arg(&level_id)
+        .arg("--scheme")
+        .arg(&scheme_id)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("VERIFY_SPAWN_FAILED|{}|{e}", verify.display()))?
+        .wait_with_output()
+        .map_err(|e| format!("VERIFY_WAIT_FAILED|{e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    serde_json::from_str(&stdout).map_err(|e| format!("VERIFY_PARSE_FAILED|{e}|{stdout}"))
+}
+
 #[tauri::command]
 fn list_levels() -> Result<Vec<levels::LevelRow>, String> {
     let cfg = config::load().ok_or("NOT_CONFIGURED")?;
@@ -217,6 +269,7 @@ pub fn run() {
             delete_backup,
             is_game_running,
     is_game_available,
+    verify_circuit,
             list_levels,
             save_levels,
             list_level_names,
