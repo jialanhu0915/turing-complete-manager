@@ -2,97 +2,135 @@
 title: circuit.data 二进制格式
 last_updated: 2026-08-08
 scope: investigation
-status: 部分逆向（结构骨架已识别，完整 schema 未完成）
+status: 已审（外部参考实现确认）
 ---
 
 # `circuit.data` 二进制格式
 
-> ⚠️ **当前状态**：已识别文件骨架、固定区段、ASCII 标签，但完整 schema 未完成。**未达到可读写**的水平。
-> 完整逆向需要进一步工作（详见末尾"待续工作"）。
+> ✅ **schema 已确认**：通过外部参考实现 `tc-save-lab` 验证完整读写。
+> 本文档记录关键发现和外部参考来源。
 
 ## 概要
 
-- **位置**：`%APPDATA%\Turing Complete\schematics\<level_id>\<scheme>\circuit.data`
-- **类型**：二进制，无外部 schema 文档
-- **大小范围**：50 B（空模板）— 5439 B（复杂架构关卡）
-- **分布**：112 个主文件 + ~225 个 backup
+`circuit.data` 在 **两种地方出现**，**两种版本格式**：
 
-样本盘点和 size 分布见 `level-data.md` § 1.2。
+| 位置 | 用途 | 版本 |
+|---|---|---|
+| `E:\SteamLibrary\steamapps\common\Turing Complete\campaign\<level>\circuit.data` | 游戏关卡定义 | **v13**（旧格式） |
+| `%APPDATA%\Turing Complete\schematics\<level>\<scheme>\circuit.data` | 玩家存档 | **v15**（当前格式） |
+
+- **第 1 字节 = 格式版本号**
+- **其余 = Snappy 压缩的二进制数据**
+- 解压后：含 Circuit 元数据 + 组件列表 + 连线列表
 
 ---
 
-## 一、固定结构骨架
-
-通过对 28 个 100–300 B 文件的逐字节统计分析，识别出文件骨架：
+## 文件布局
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ [0x00–0x0F] 16 字节文件头                                    │
-│   0x00   = 0x0F  (magic byte, 100% 常量)                     │
-│   0x01–0x02     文件 ID（多数文件在此变化）                   │
-│   0x03   = 0x20 (空) / 0x30 (有组件)                          │
-│   0x04–0x0B     8 字节 UUID-like 随机数（每文件不同）        │
-│   0x0C–0x0F     00 00 00 00 (padding, 100% 常量)             │
-├──────────────────────────────────────────────────────────────┤
-│ [0x10–0x2F] 32 字节结构区 + I/O 模板                         │
-│   0x10  XX  ← 候选"首块类型字节"（强候选）                  │
-│   0x11  01 (100% 常量)                                       │
-│   0x12  05 (75% 常量)                                        │
-│   0x13–0x1F  块数据                                          │
-│   0x20–0x2F  fe 01 00 重复 6 次（I/O 表，详见 § 三）        │
-├──────────────────────────────────────────────────────────────┤
-│ [0x30–end] 关卡特有数据                                       │
-│   ASCII 标签、组件定义、连接关系、位置坐标等                 │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ [0x00] 1 字节：格式版本                      │
+│         0x0F = v15（玩家存档）               │
+│         0x0D = v13（游戏本体 campaign）      │
+├──────────────────────────────────────────────┤
+│ [0x01..end] Snappy 压缩的 Circuit body       │
+└──────────────────────────────────────────────┘
 ```
 
-**关键常量**（跨 28 个文件验证）：
-
-| 偏移 | 值 | 性质 |
-|---|---|---|
-| `0x00` | `0x0F` | magic byte，文件格式标识 |
-| `0x0F` | `0x00` | padding |
-| `0x11` | `0x01` | 结构区第二字节恒为 01 |
-| `0x12` | `0x05` | 75% 文件恒为 05 |
-
-**高熵随机区**：`0x04–0x0B`（8 字节），28 个文件几乎全不同。类似 UUID 或 per-file nonce。
+**重要**：之前我们看到的"mysterious UUID-like 字节"和"fe 01 00 重复模式"，**不是**文件结构——是 Snappy 压缩流的内部表示。byte-level 分析无法逆向出 schema。
 
 ---
 
-## 二、byte 0x10 — 候选"首块类型字节"
+## 解压后的 Circuit 结构（v15）
 
-这是最有价值的发现。byte 0x10 在不同关卡间的取值：
+解压后按 `binary.py` 的小端序 reader 解析：
 
-| 关卡 | byte 0x10 | 解读 |
+### 顶层 Circuit
+
+| 字段 | 类型 | 说明 |
 |---|---|---|
-| `binary_racer`（空） | `0x08` | 空模板标志 |
-| `introduction`（空） | `0x08` | 空模板标志 |
-| `and_gate` | `0x02` | 首块 = AND 门 |
-| `not_gate` | `0x01` | 首块 = NOT 门 |
-| `or_gate` | `0x03` | 首块 = OR 门 |
-| `full_adder` | `0x09` | 首块 = 复合组件？ |
+| `custom_id` | i64 | 自定义元件 ID（0 = 普通电路） |
+| `hub_id` | u32 | hub 标识 |
+| `gate` | i64 | 总门数（cost） |
+| `delay` | i64 | 总延迟 |
+| `menu_visible` | bool | UI 中是否显示 |
+| `clock_speed` | u64 | 时钟频率 |
+| `dependencies` | u16 + i64[] | 依赖的自定义元件 ID 列表 |
+| `description` | u16-len + UTF-8 | 玩家描述 |
+| `sync_state` | u8 | 同步状态 |
+| `score` | u16 | 当前得分 |
+| `player_data` | u16-len + bytes | 玩家私有数据 |
+| `hub_description` | u16-len + UTF-8 | hub 描述 |
+| `design` | 512 bytes | 仅当 `custom_id != 0` |
+| `components` | i64 count + ... | 见下 |
+| `wires` | i64 count + ... | 见下 |
 
-**重要观察**：`0x10` 与 `replay.nim` 中的 `ComponentType` 枚举顺序**不对应**（AND=2 ≠ com_and_bit=0，OR=3 = com_or_bit ✓，NOT=1 ≠ com_not_bit=8）。
+### Component
 
-可能解释：
-- 游戏内部对组件有自己的 block ID 编号，与 `replay.nim` 的 ComponentType 枚举不一致
-- 或者 `0x10` 不是"组件类型"而是"块类型"（包含位置/连接信息）
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `kind` | u16 | ComponentType 枚举值（见下） |
+| `position` | (i16, i16) | (x, y) 坐标 |
+| `rotation` | u8 | 旋转（0-3） |
+| `permanent_id` | i64 | 唯一 ID（玩家拖动不会变） |
+| `user_label` | u16-len + UTF-8 | 玩家给的标签（"Input"等） |
+| `custom_string` | u16-len + UTF-8 | 自定义字符串 |
+| `settings` | u16 count + u64[] | 组件配置参数 |
+| `buffer_size` | i64 | RAM 缓冲大小 |
+| `ui_order` | i16 | UI 显示顺序 |
+| `word_size` | i64 | 字长（位） |
+| `immutable` | bool | 不可变（关卡定义用） |
+| `cost_gate` | i64 | 此组件门数 |
+| `cost_delay` | i64 | 此组件延迟 |
+| `little_endian` | bool | 字节序 |
+| `init_data` | u8 | 初始数据 |
+| `linked_components` | u16 count + 5-tuples | 关联组件（多态端口） |
+| `selected_programs` | u16 count + (string, string) | 架构关卡程序引用 |
+| **条件字段**（kind == 78）： |
+| `custom_id` | i64 | 自定义元件 ID |
+| `custom_word_sizes` | u16 count + (i64, i64) | 自定义字长 |
 
-**仍需验证**：对 byte 0x10 的语义最终确认需要：
-- 找一个含多种门类型的关卡（如 `full_adder`）做穷举
-- 或者反编译 `compile.dll` 查看内部结构体定义
+### Wire
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `color` | u8 | 颜色 ID |
+| `comment` | u16-len + UTF-8 | 玩家注释 |
+| `start` | (i16, i16) | 起点 |
+| `segments` | u16 循环（length=0 结束） | 路径段，bits 13-15=direction, bits 0-12=length |
 
 ---
 
-## 三、ASCII 标签（level I/O names）
+## ComponentType 枚举（实测样本）
 
-跨 112 个文件统计的**真实**标签（非随机字节巧合）：
+实测几个简单关卡，验证 `replay.nim` 里的枚举顺序：
+
+| 关卡 | kind | 推测 |
+|---|---|---|
+| `and_gate` 的 XOR 门 | 6 | com_xor_bit（实际枚举第 6）|
+| `not_gate` 的 XOR 门 | 6 | com_xor_bit |
+| `or_gate` 的 OR 门 | 3 | **com_or_bit** ✓ 与 ComponentType 枚举一致 |
+| `full_adder` Sum/Carry 输出 | 69 | 特殊输出类型 |
+
+**已知 kind 集合**（按 `tc-save-lab/scaffold.py`）：
+
+```python
+LEVEL_INPUT_KINDS  = frozenset({60, 61, 62, 63, 64, 65, 106})
+LEVEL_OUTPUT_KINDS = frozenset({40, 58, 68, 69, 70, 73, 74, 75, 77})
+CUSTOM_COMPONENT_KIND = 78
+```
+
+---
+
+## 关键 ASCII 标签
+
+实际解码后（不再是随机字节巧合）：
 
 | 标签 | 出现次数 | 用途 |
 |---|---|---|
-| `Input` | 33 | 关卡输入（数字关卡常用） |
-| `Out` | 27 | 关卡输出（短标签） |
-| `Output` | 14 | 关卡输出（长标签） |
+| `Input` | 33+ | 关卡输入 |
+| `Input 0/1/2` | 多 | 多输入关卡 |
+| `Out` / `Output` | 27/14+ | 关卡输出 |
 | `Result` | 15 | ALU 输出 |
 | `flags` | 15 | ALU 标志位 |
 | `Instruction` | 15 | 架构关卡输入 |
@@ -100,138 +138,104 @@ status: 部分逆向（结构骨架已识别，完整 schema 未完成）
 | `Reg 0` | 13 | 寄存器编号 |
 | `Register File` | 11 | 寄存器堆 |
 | `Program` | 9 | 程序 ROM |
-| `Count` | 9 | 计数器输出 |
-| `new_program.asm` | 11 | 架构关卡的汇编文件名引用 |
-
-**观察**：
-- "Input" / "Out" / "Output" 几乎在所有关卡出现（基础 I/O 标签）
-- ALU/架构关卡有丰富的额外标签（Result, flags, Reg 0, Main Memory）
-- `new_program.asm` 出现 11 次 → 架构关卡的电路存档同时包含对 `.asm` 文件名的引用
 
 ---
 
-## 四、文件结构示意（基于已知片段）
+## 与 `replay.nim` 的关系（再确认）
 
-```
-[16-byte 文件头]
-  ↓
-[结构区]
-  XX 01 05 YY YY YY 00 00 00  ← "块"结构（每块 8 字节？）
-  ↓ (可能多块)
-[重复结构 / 组件定义]
-  ↓
-[ASCII 标签区]                  ← "Input\0", "Output\0", "Result\0" 等
-  ↓
-[位置/连接数据]                 ← 坐标、wire IDs
-  ↓
-[可能的尾部]
-  0d 0b 10 fe ff ff ff 06 09 16 48 fe ff 01 00 06 80 00 00 00 00 00
-  ← OR/full_adder 共有的尾部片段，AND/NOT 无此段（意义未明）
-```
-
----
-
-## 五、与 `replay.nim` 的关系
-
-`circuit.data` 与 `replay.nim` 编码的是**完全不同的数据**：
+`circuit.data` 与 `replay.nim` 编码**完全不同的数据**：
 
 | 数据 | `circuit.data` | `replay.nim` |
 |---|---|---|
-| 电路拓扑 | ✅（本文件） | ❌ |
+| 电路拓扑 | ✅ | ❌ |
 | 组件类型 | ✅ | ✅ `#COUNTS` |
-| 组件连接 | ✅ | ❌ |
-| UI 状态 | ❌ | ✅ `ui_set_*` |
-| 测试输入/输出历史 | ❌ | ✅ `output_history_pins` |
-| 仿真驱动代码 | ❌ | ✅ |
-
-**结论**：要修改电路（添加门、连线、改布局），必须编辑 `circuit.data`；`replay.nim` 只是运行时重放脚本。
+| 组件连接（wire） | ✅ | ❌ |
+| UI 状态 | ❌ | ✅ |
+| 测试输入/输出历史 | ❌ | ✅ |
 
 ---
 
-## 六、对 CLI 目标的影响
+## 外部参考实现
 
-CLI 想做"用游戏本体验证 LLM 生成的电路"，关键路径：
+### `tc-save-lab`（已验证可工作）
 
-```
-1. LLM 生成候选电路 → 需要写电路.data
-2. 写到新 scheme 文件夹 ← 已知结构（每关一个子目录）
-3. 让游戏加载并跑测试 ← 需 D-7（注入机制）
-4. 读 sim_test_result    ← 已知 memory layout（command-state.md）
-```
+`B:\VS_Code_Project\turing-complete-optimizer\` 是另一个项目，提供：
 
-**当前阻断点**：
-- ❌ 第 1 步：**写**电路.data 仍不可行（schema 不完整）
-- ❌ 第 3 步：注入机制未解（D-7）
-- ✅ 第 2 步：基础设施已有
-- ✅ 第 4 步：原理已知（需要 D-1 打通 DLL 调用通道）
+- `src/tc_save_lab/codec.py` — 完整的 v15 编解码器（含 `decode_v15` / `encode_v15`）
+- `src/tc_save_lab/legacy_codec.py` — v7/v13/v14 只读解码器
+- `src/tc_save_lab/binary.py` — 小端二进制 reader/writer 原语
+- `src/tc_save_lab/snappy.py` — 纯 Python Snappy 编解码
+- `src/tc_save_lab/model.py` — 完整的数据模型（`Circuit`、`Component`、`Wire` dataclasses）
+- `src/tc_save_lab/scaffold.py` — 关卡脚手架提取（输入/输出 pin 配置）
 
----
+**实测结果**（用该项目的 codec 解码我们的样本）：
+- `and_gate/缺省` v15 → 4 components, gate=2, delay=2 ✓
+- `not_gate/缺省` v15 → 3 components, gate=1, delay=1 ✓
+- `or_gate/缺省` v15 → 5 components, gate=3, delay=2 ✓
+- `full_adder/标准` v15 → 10 components, gate=9, delay=4 ✓
+- `campaign/and_gate` v13 → 2 components (Input/Output, immutable) ✓
 
-## 七、待续工作
+**`tc-save-lab` 的工作流（已实现）：**
+- 严格 v15 读写 + round-trip 校验
+- 92 个主线关卡独立 examples 目录
+- 离线穷举验证组合逻辑
+- 原子写回（`apply`/`install-reviewed` 子命令）
+- 安全检查：游戏运行时拒绝写
 
-按优先级：
-
-### W-1. 完成 schema 逆向
-- **方法 A**：找含多门类型的关卡（如 `full_adder`）穷举
-- **方法 B**：用 IDA/Ghidra 反编译 `compile.dll`，找到 `circuit.data` 的反序列化函数
-- **方法 C**：用 Godot 资源工具（Godot 自带 `--export-debug`）尝试解析
-
-**推荐 B**：dump 出来的字符串表 + 类型签名比纯字节分析快 10 倍。
-
-### W-2. 找到门类型字节的最终语义
-- 在多个含异构门的关卡上验证 byte 0x10 的取值范围
-- 建立 `byte 0x10 → 组件名` 的查表
-
-### W-3. 写回合法性测试（W-3）
-- 拿一个关卡备份，把 `circuit.data` 复制回原位
-- 启动游戏，加载关卡，验证无崩溃 + 门数相同
-- 改成"加一个门"的版本，再测一次
-
-### W-4. 文档化完整 schema
-- 完成 W-1 + W-2 后，更新本文档为"完整版"
-- 提供一个 Python 读写函数库（`circuit_io.py`）
+**`tc-save-lab` 不提供的（我们要补的）：**
+- ❌ 调用 `compile.dll` / 不启动游戏直接驱动仿真
+- ❌ 把候选电路"喂给游戏本体"做端到端验证
+- ❌ LLM 集成（生成候选）
+- ❌ Campaign v13/v14 的写（只读）
 
 ---
 
-## 八、关键样本数据（备忘）
-
-### byte 0x10 取值分布（28 文件 100–300B）
-
-| byte 0x10 | 出现次数 | 含义推测 |
-|---|---|---|
-| 0x01 | 6 | NOT 门 / 1-输入块 |
-| 0x02 | 6 | AND 门 / 2-输入块 |
-| 0x03 | 5 | OR 门 / 多-输入块 |
-| 0x08 | 4 | 空模板 |
-| 0x09 | 2 | 复合组件首块 |
-
-### 文件尾共有的片段
+## 我们 CLI 要做的事（基于参考实现）
 
 ```
-0d 0b 10 fe ff ff ff 06 09 16 48 fe ff 01 00 06 80 00 00 00 00 00
+tc-save-lab 提供的         我们 CLI 需要补的
+─────────────────         ─────────────────
+v15 codec (读写)    ──┐
+v13/v14 codec (读)  ──┤
+关卡脚手架提取       ──┼──→  游戏本体调用 (compile.dll)  ← 新增
+纯 Python 仿真      ──┤    LLM 集成                  ← 新增
+原子写回机制        ──┘    per-scheme 隔离工作流      ← 新增
 ```
 
-出现在 OR 和 full_adder 中。AND/NOT 中没有——可能与"输入/输出引脚数"或"块数量"有关。
-
-### magic byte 0x0F 的含义
-
-`0x0F` 作为文件首字节，可能是：
-- Godot 的 `ResourceLoader` 内部格式标识
-- 或游戏自定的存档格式魔数
-
-无法仅凭字节判断，需要查 Godot 源码或 dump 字符串。
+我们的 manager CLI **不只是 tc-save-lab 的复制**——核心增量是"用游戏本体（不是离线模拟）验证候选电路"。
 
 ---
 
-## 九、参考样本路径
+## 待续工作
+
+### ~~W-1 完整 schema 逆向~~ ✅ 已由 tc-save-lab 完成
+直接采用 `tc-save-lab/codec.py` 的实现（或移植到 Rust）。
+
+### W-2. 移植到 Rust / 集成进 Tauri app
+- `binary.py` → 用 `byteorder` crate 重写（小端序 reader/writer）
+- `snappy.py` → 用 `snap` crate（pure Rust Snappy）
+- `model.py` → `serde` 派生 `Circuit`/`Component`/`Wire`
+- 入口：`src-tauri/src/circuit/` 模块
+- 共享给 CLI（`src-tauri/src/bin/tcc.rs`）
+
+### W-3. 注入机制（D-7）—— 让游戏加载我们的电路
+- ~~改 `levels.txt`~~ 已排除
+- 选项：通过 `compile.dll` 直接调用
+- 选项：通过游戏 UI 自动化
+- 待选
+
+### W-4. ~~写回合法性测试~~（仅在 v15 codec 移植后）
+- 拿一份备份，写回原位，启动游戏加载关卡看是否接受
+
+---
+
+## 关键样本路径
 
 | 关卡 | 路径 | 用途 |
 |---|---|---|
-| 空模板 | `schematics/binary_racer/缺省/circuit.data` (50B) | 基线对照 |
-| 单门（NOT） | `schematics/not_gate/缺省/circuit.data` (189B) | 最小非空样本 |
-| 单门（AND） | `schematics/and_gate/缺省/circuit.data` (220B) | 2-输入最小 |
-| 单门（OR） | `schematics/or_gate/缺省/circuit.data` (254B) | 2-输入 OR |
-| 复合 | `schematics/full_adder/标准/circuit.data` (489B) | 多类型门 |
-| 最大 | `schematics/byte_adder/Ling 8bit/circuit.data` (5439B) | 复杂电路 |
-| ALU | `schematics/symphony_alu/...` | 含 Result/flags/Instruction 标签 |
-| 架构 | `schematics/architecture/.../circuit.data` | 含 `new_program.asm` 引用 |
+| `and_gate` | `schematics/and_gate/缺省/circuit.data` (220B) | v15 最小非空 |
+| `not_gate` | `schematics/not_gate/缺省/circuit.data` (189B) | 单门 1 输入 |
+| `or_gate` | `schematics/or_gate/缺省/circuit.data` (254B) | 单门 2 输入 |
+| `full_adder` | `schematics/full_adder/标准/circuit.data` (489B) | 多类型组件 |
+| `byte_adder` | `schematics/byte_adder/Ling 8bit/circuit.data` (5439B) | 最大样本 |
+| `campaign/and_gate` | `E:\...\campaign\and_gate\circuit.data` | **v13** 关卡定义 |
