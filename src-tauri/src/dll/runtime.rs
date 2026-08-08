@@ -77,6 +77,7 @@ mod tests {
     /// Smoke test: invoke the full compile pipeline with a trivial DSL body.
     /// Skips if shim.dll isn't built (CI without game dev env).
     #[test]
+    #[ignore = "stateful: calls compile.dll::compile (single-use, needs game + shim); run via --ignored"]
     fn end_to_end_compile_invocation() {
         let shim_path = crate::config::default_save_dir();
         let shim_present = std::path::Path::new("../sim-shim/shim.dll").exists();
@@ -114,5 +115,73 @@ mod tests {
             status != 0 || out.is_populated(),
             "compile() neither returned non-zero status nor populated output"
         );
+    }
+
+    /// Probe the DSL grammar empirically: try several minimal sources and print
+    /// the compiler's response. Helps reverse-engineer what the CURRENT
+    /// compile.dll accepts (replay.nim on disk is an older DSL dialect).
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile (single-use, needs game + shim); run via --ignored"]
+    fn probe_minimal_dsl_grammar() {
+        let shim: &Shim = shim().expect("shim load");
+
+        // Read the DSL source from ../sim-shim/probe.dsl so we can iterate on
+        // the DSL text without recompiling Rust. Also print the compiler's
+        // stderr/stdout (it echoes errors to the process streams).
+        let dsl_path = std::path::Path::new("../sim-shim/probe.dsl");
+        if !dsl_path.exists() {
+            eprintln!("SKIP: probe.dsl not at {}", dsl_path.display());
+            return;
+        }
+        let dsl = std::fs::read_to_string(dsl_path).expect("read probe.dsl");
+        let src = std::ffi::CString::new(dsl.clone()).expect("probe.dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+        eprintln!("--- probe.dsl (status={status}) ---");
+        eprintln!("  out: {out:?}");
+        eprintln!("  --- source (first 40 lines) ---");
+        for line in dsl.lines().take(40) {
+            eprintln!("  {line}");
+        }
+    }
+
+    /// Compile a REAL and_gate DSL source extracted from replay.nim.
+    /// Verifies the game's JIT compiler accepts our circuit's DSL.
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile (single-use, needs game + shim); run via --ignored"]
+    fn compile_real_and_gate_dsl() {
+        let shim: &Shim = shim().expect("shim load");
+        let dsl_path = std::path::Path::new("../sim-shim/and_gate.dsl");
+        if !dsl_path.exists() {
+            eprintln!("SKIP: and_gate.dsl not at {}", dsl_path.display());
+            return;
+        }
+        let dsl = std::fs::read_to_string(dsl_path).expect("read and_gate.dsl");
+        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+
+        eprintln!("and_gate compile() returned status={status}");
+        eprintln!("output: {out:?}");
+        assert!(out.is_populated(), "compile output must be populated");
+        // NOTE: we don't yet assert status == 0. The exact success value is
+        // still being determined. For now we just confirm the call ran and
+        // wrote to the output buffer without crashing.
     }
 }

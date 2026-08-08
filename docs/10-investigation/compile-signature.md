@@ -129,13 +129,29 @@ compile (rcx=out, rdx=src_str, r8=mode, r9=flags)
 
 ---
 
-## 参数语义（待 Phase D 验证）
+## 参数语义（已实测验证 2026-08-08）
 
-### arg2 (src_str)
+### arg1 (out_buf)
 
-Nim string layout：`{ int64 length; ptr char_data_at_offset_8 }`
+`void*`，caller 分配 ≥40 字节，`compile` 写 5 个字段（见上文输出结构体）。
 
-含义：用户提供的 DSL 源码（已**不含**标准库前缀）。
+### arg2 (src_str) — 实测确认
+
+**必须是"指向 NimStringV2 的指针"**，不是裸 char*，也不是 NimStringV2 本身。
+
+本地 Nim 2.2.10 (orc) 生成的类型布局（`strlayout.nim` 编译产物实测）：
+
+```c
+struct NimStrPayload { NI cap; char data[]; };   // 字符从 offset 8 开始
+struct NimStringV2   { NI len; NimStrPayload* p; }; // 8 字节对齐
+```
+
+`compile` 反汇编读取：
+- `[arg2+0]` = len（`mov (%rdx),%rbp`）
+- `[arg2+8]` = payload ptr（`mov 0x8(%rdx),%r14`）
+- 然后 `memcpy(dst, r14+8, len)` —— `r14+8` 跳过 payload 的 `cap` 字段，正好是字符数据
+
+**shim 正确做法**：在 Nim 里构造 `var code = $cstring`，然后传 `addr code`（指向 NimStringV2）。**不能**在 Rust 里手拼 `{len, data}` —— 布局容易错（我们踩过坑：直接传裸 char* 会让 compile 把源码前 8 字节当 len 读成垃圾）。
 
 ### arg3 (mode)
 
@@ -143,7 +159,7 @@ Nim string layout：`{ int64 length; ptr char_data_at_offset_8 }`
 - `mode == 0` → 正常编译路径（直接走 `compile_source`）
 - `mode != 0` → 调用 `log__OOZpassesZfront95endZtokens_u258` 后再走相同路径
 
-推测：mode bit 0 = "log tokens to stderr"。
+推测：mode bit 0 = "log tokens to stderr"。实测传 `0` 正常。
 
 ### arg4 (flags)
 
@@ -153,34 +169,53 @@ Nim string layout：`{ int64 length; ptr char_data_at_offset_8 }`
 
 ---
 
-## 调用约定清单
+## 调用约定清单（实测更新）
 
 | 项 | 值 |
 |---|---|
 | 调用约定 | Microsoft x64 (rcx/rdx/r8/r9) |
-| `NimMain()` 前置调用 | **必须**，否则段错误 |
+| `NimMain()` | **不能显式调**！`--app:lib` DLL 的 DllMain 在 `LoadLibraryA` 时自动调用。再调一次会触发 `source_buffer.len == 0` "Only call init once" 断言（实测踩坑）。shim 里的 `tccNimMain` 现在是 no-op。 |
 | 字符串编码 | UTF-8（无 BOM） |
 | 输出结构体内存对齐 | 8 字节（自然对齐） |
-| 线程安全 | **非线程安全**——`NimMain` 只能调一次；多次调用需加锁 |
+| 线程安全 | **非线程安全**——compile.dll 全局状态；需加锁 |
+| 返回值 | `rax` = out_buf 指针（不是状态码！低 32 位看起来像乱码 status，实际是 buffer 地址） |
+
+---
+
+## 已实测确认（2026-08-08，经 shim + Rust 测试）
+
+1. **shim 成功驱动 compile.dll**：`cargo test dll::runtime` 里传合法 DSL，无断言、无 COMPILER ERROR，输出结构体字段填充。
+2. **最小当前 dialect DSL 编译成功**（见 `sim-shim/probe.dsl`）：
+   - `switch expr` + 缩进 `case {}` 块（`quit_simulation {}` 不是独立语句）
+   - `var x = <value>`（没有 `var x: Type` 无初始化）
+   - 顶层前向引用 OK、同函数嵌套前向引用 OK
+3. **replay.nim 是旧 dialect**：用 `sim_tick`/`target_tick`，当前编译器用 `sim_cycle`/`sim_target_cycle`。且 replay.nim 依赖**跨函数嵌套 def 调用**（`mode_run` 调 `run_sim` 循环里定义的 `get_input`），当前编译器不支持 → 真实 and_gate DSL 编译失败 `No function matched get_input(Int)`。
+4. **标准库前缀**：`compile` 自动拼接 27361 字节（1506 行）DSL 标准库（`prefix.dsl` 已提取）——含 82 个函数（`memory_*`, `big_int_*`, `print_using_stack`, `allocate_raw` 等），**不含** `get_input`/`get_output` 等仿真函数（那些在电路 DSL 里定义）。
 
 ---
 
 ## 已知未解之谜
 
-1. **输出结构体的精确字段语义**——`r14`/`r12`/`r13d`/`r15`/`rbp` 在 `compile` 返回前各自指向什么。需要：
-   - 与 exe 的 `handle_request_compile_and_run` 调用点交叉验证（找它如何用 `compile.dll::compile` 的返回值）
-   - 或写一个最小 Nim 测试程序，对比不同输入下输出结构体的内容
+1. **输出结构体的精确字段语义**——成功时 `field_0`/`field_1`/`field_2` 是 machine_code 相关（field_0≈8607 稳定计数、field_1=堆指针、field_2≈8521）；`field_3=0`/`field_4=0` 表示无错误。错误时 `field_3=13`、`field_4=错误消息指针`。
 2. **arg3 mode 的全部 bit 含义**——只确认了 bit 0 = log tokens
 3. **arg4 flags 的语义**——可能是 `simulation_state_length`
-4. **JIT 函数指针（offset 0x20）的调用约定**——`(args...) -> ret` 怎么写
+4. **JIT 函数指针的调用约定**——成功编译后生成的机器码如何 invoke（最关键的下一步）
+5. **当前 DSL 的完整作用域规则**——跨函数嵌套 def 如何改写（get_input 需移到顶层 def）
 
 ---
 
 ## 下一步建议
 
-### 短期（不依赖未解之谜）
+### 短期（已验证可行）
 
-写 shim.nim：
+shim + `run_circuit_test` 骨架已跑通编译。要验证真实电路，需要：
+1. 把 `replay.nim` 的 DSL 改成当前 dialect（`sim_tick→sim_cycle`、嵌套 def 移到顶层）
+2. 或**直接从电路生成 DSL**（理解 `mode_refresh` 的组件更新代码生成模式）
+
+### 中期
+
+1. 破解 JIT 机器码的调用约定（IDA 跟 `passes/jit/jit.nim` 的 emit 模式，或试调）
+2. 在 Rust 里 `VirtualAlloc` + 拷贝机器码 + `VirtualProtect(PAGE_EXECUTE)` 执行
 - 导入 compile.dll::compile
 - 直接把 4 个参数透传
 - 输出结构体的 40 字节原样回传给 Rust
