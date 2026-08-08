@@ -13,4 +13,5 @@ pub mod binary;
 pub mod codec;
 pub mod legacy;
 pub mod model;
+pub mod pins;
 pub mod snappy;
