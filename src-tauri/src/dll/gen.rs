@@ -22,22 +22,24 @@ use crate::circuit::model::{Circuit, Component, Point};
 use crate::circuit::pins::{self, Connectivity, PinDir};
 
 /// Per-level test template (the level's I/O contract + test oracle).
+///
+/// Built from `test.si` by [`crate::dll::test_si::parse`] (the game's per-level
+/// test spec) — no hand-authored templates.
+#[derive(Debug)]
 pub struct LevelTemplate {
     /// `type Input { ... }` block.
-    pub input_struct: &'static str,
+    pub input_struct: String,
     /// `type Output { ... }` block.
-    pub output_struct: &'static str,
-    /// `def get_input(tick: Int) Input { ... }` — generates the level's input.
-    pub get_input: &'static str,
-    /// `def check_output(tick: Int, input: Input, output: Output) TestResult { ... }`
-    pub check_output: &'static str,
-    /// `(field_name, field_type)` for level-input pins, in the order the
-    /// circuit's level-input components expose their output pins.
-    pub input_fields: &'static [(&'static str, &'static str)],
-    /// `(field_name, field_type)` for level-output pins, in component order.
-    pub output_fields: &'static [(&'static str, &'static str)],
-    /// Whether to write `.level_output.result_is_z = false` after the outputs.
-    pub result_is_z: bool,
+    pub output_struct: String,
+    /// Compacted module decls + helper defs + `get_input` + `check_output`
+    /// (the game's test logic, verbatim after blank-line removal).
+    pub test_defs: String,
+    /// `(field_name, field_type)` for level-input ports, in component order.
+    pub input_fields: Vec<(String, String)>,
+    /// `(field_name, field_type)` for level-output ports, in component order.
+    pub output_fields: Vec<(String, String)>,
+    /// z-flag fields set to `false` after the outputs (`output_is_z`, ...).
+    pub output_z_fields: Vec<String>,
 }
 
 // ─── Component kind → DSL facts ────────────────────────────────────────────
@@ -49,8 +51,10 @@ fn kind_to_enum(kind: u16) -> Option<usize> {
         3 => 2,   // com_not_bit
         6 => 5,   // com_nand_bit
         60 => 56, // com_level_input_1_pin
+        61 => 57, // com_level_input_word
         63 => 59, // com_level_input_2_pin
         68 => 62, // com_level_output_1_pin
+        69 => 63, // com_level_output_word
         _ => return None,
     })
 }
@@ -61,8 +65,10 @@ fn kind_to_name(kind: u16) -> Option<&'static str> {
         3 => "com_not_bit",
         6 => "com_nand_bit",
         60 => "com_level_input_1_pin",
+        61 => "com_level_input_word",
         63 => "com_level_input_2_pin",
         68 => "com_level_output_1_pin",
+        69 => "com_level_output_word",
         _ => return None,
     })
 }
@@ -159,36 +165,53 @@ fn emit_circuit_sim(
     for &ci in &conn.topo_order {
         let comp = &components[ci];
         let pins = pins::positioned_pins(comp, ci);
+        let cmt = comment(ci, comp);
 
         if is_level_input(comp.kind) {
-            for p in pins.iter().filter(|p| p.direction != PinDir::Input) {
+            // One component ↔ one Input port. A 1-pin component reads the whole
+            // field; an N-pin component reads the packed field's bits (pin i →
+            // bit i, LSB first — verified empirically for and_gate).
+            let (fname, ftype) = in_fields
+                .next()
+                .ok_or("MISSING_INPUT_FIELD")?
+                .clone();
+            let out_pins: Vec<_> = pins
+                .iter()
+                .filter(|p| p.direction != PinDir::Input)
+                .collect();
+            lines.push(cmt);
+            if out_pins.len() == 1 {
                 let slot = next_slot;
                 next_slot += 1;
-                out_slot.insert((ci, p.name.clone()), slot);
-                let (fname, ftype) = *in_fields
-                    .next()
-                    .ok_or("MISSING_INPUT_FIELD")?;
-                lines.push(comment(ci, comp));
+                out_slot.insert((ci, out_pins[0].name.clone()), slot);
                 lines.push(format!("var vid{slot} = {ftype} .level_input.{fname}"));
+            } else {
+                for (i, p) in out_pins.iter().enumerate() {
+                    let slot = next_slot;
+                    next_slot += 1;
+                    out_slot.insert((ci, p.name.clone()), slot);
+                    lines.push(format!(
+                        "var vid{slot} = U1 (.level_input.{fname} >> {i} & 1)"
+                    ));
+                }
             }
         } else if is_level_output(comp.kind) {
-            for p in pins.iter().filter(|p| p.direction == PinDir::Input) {
-                let src = match driver_slot(p, &net_by_pos, &conn.networks, &out_slot) {
-                    Some(slot) => format!("vid{slot}"),
-                    // Undriven level output → constant 0 (broken circuit; the
-                    // check_output comparison will fail against a high expected).
-                    // `ftype` below provides the type prefix (`.result = U1 0x0`).
-                    None => "0x0".to_string(),
-                };
-                let (fname, ftype) = *out_fields
-                    .next()
-                    .ok_or("MISSING_OUTPUT_FIELD")?;
-                lines.push(comment(ci, comp));
-                lines.push(format!(".level_output.{fname} = {ftype} {src}"));
-            }
-            if tpl.result_is_z {
-                lines.push(".level_output.result_is_z = false".to_string());
-            }
+            // One component ↔ one Output port; value read from its input pin's
+            // driver. Undriven → constant 0 (broken circuit; check_output's
+            // comparison fails against a high expected). `ftype` prefixes it.
+            let (fname, ftype) = out_fields
+                .next()
+                .ok_or("MISSING_OUTPUT_FIELD")?
+                .clone();
+            let in_pin = pins.iter().find(|p| p.direction == PinDir::Input);
+            let src = match in_pin
+                .and_then(|p| driver_slot(p, &net_by_pos, &conn.networks, &out_slot))
+            {
+                Some(slot) => format!("vid{slot}"),
+                None => "0x0".to_string(),
+            };
+            lines.push(cmt);
+            lines.push(format!(".level_output.{fname} = {ftype} {src}"));
         } else {
             let inputs: Vec<InputSrc> = pins
                 .iter()
@@ -196,14 +219,19 @@ fn emit_circuit_sim(
                 .map(|p| driver_slot(p, &net_by_pos, &conn.networks, &out_slot))
                 .collect();
             let expr = gate_expr(comp.kind, &inputs)?;
+            lines.push(cmt);
             for p in pins.iter().filter(|p| p.direction != PinDir::Input) {
                 let slot = next_slot;
                 next_slot += 1;
                 out_slot.insert((ci, p.name.clone()), slot);
-                lines.push(comment(ci, comp));
                 lines.push(format!("var vid{slot} = {expr}"));
             }
         }
+    }
+
+    // z-flag fields: every level output is driven, so none is high-Z.
+    for zf in &tpl.output_z_fields {
+        lines.push(format!(".level_output.{zf} = false"));
     }
 
     // Indent to the mode_run per-cycle body depth (3 × 4 spaces).
@@ -246,8 +274,7 @@ def set_text(text: String, offset: Int) {
     }
 }
 const #CYCLE_PAST_FAIL = 0
-__GET_INPUT__
-__CHECK_OUTPUT__
+__TEST_DEFS__
 var commands = Ptr 0x1000000
 var settings = Ptr 0x1000010
 var input_replay = [U64] 0x1000020
@@ -548,8 +575,7 @@ pub fn generate(circuit: &Circuit, tpl: &LevelTemplate) -> Result<String, String
     let structs = format!("{}\n{}", tpl.input_struct, tpl.output_struct);
     let out = SKELETON
         .replace("__INPUT_OUTPUT_STRUCTS__", &structs)
-        .replace("__GET_INPUT__", tpl.get_input)
-        .replace("__CHECK_OUTPUT__", tpl.check_output)
+        .replace("__TEST_DEFS__", &tpl.test_defs)
         .replace("__CIRCUIT_SIM__", &sim)
         .replace("__GATE_SCORE__", &gates.to_string())
         .replace("__COMPONENT_COUNT__", &circuit.components.len().to_string())
@@ -564,7 +590,7 @@ pub fn generate(circuit: &Circuit, tpl: &LevelTemplate) -> Result<String, String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dll::levels;
+    use crate::dll::test_si;
 
     fn and_gate_circuit() -> Circuit {
         let payload = std::fs::read("../sim-shim/fixtures/and_gate.data")
@@ -572,11 +598,26 @@ mod tests {
         crate::circuit::codec::decode_circuit(&payload).expect("decode circuit")
     }
 
+    fn and_gate_template() -> LevelTemplate {
+        let content = std::fs::read_to_string("../sim-shim/fixtures/test_si/and_gate.si")
+            .expect("read test.si fixture");
+        test_si::parse(&content, "and_gate").expect("parse test.si")
+    }
+
     #[test]
     #[ignore = "needs the player's save directory; run via --ignored"]
     fn generated_and_gate_dsl_matches_spike_structure() {
         let circuit = and_gate_circuit();
-        let dsl = generate(&circuit, &levels::AND_GATE).expect("generate");
+        let dsl = generate(&circuit, &and_gate_template()).expect("generate");
+        // Input component (kind 63, 2-pin) reads the packed `input: U2` field.
+        assert!(
+            dsl.contains("var vid0 = U1 (.level_input.input >> 0 & 1)"),
+            "pin0 must read bit0:\n{dsl}"
+        );
+        assert!(
+            dsl.contains("var vid1 = U1 (.level_input.input >> 1 & 1)"),
+            "pin1 must read bit1"
+        );
         // The generated circuit-sim must wire Input → nand → not → Output.
         assert!(
             dsl.contains("var vid2 = U1 (U1 ~((U1 vid0) & (U1 vid1)))"),
@@ -587,8 +628,12 @@ mod tests {
             "not must invert nand"
         );
         assert!(
-            dsl.contains(".level_output.result = U1 vid3"),
+            dsl.contains(".level_output.output = U1 vid3"),
             "output must read the not gate"
+        );
+        assert!(
+            dsl.contains(".level_output.output_is_z = false"),
+            "z-flag must be cleared"
         );
         // Compact dialect: no blank lines anywhere.
         assert!(!dsl.contains("\n\n"), "no blank lines in generated DSL");
@@ -598,7 +643,7 @@ mod tests {
     #[ignore = "needs the player's save directory; run via --ignored"]
     fn generated_dsl_has_no_leftover_markers() {
         let circuit = and_gate_circuit();
-        let dsl = generate(&circuit, &levels::AND_GATE).expect("generate");
+        let dsl = generate(&circuit, &and_gate_template()).expect("generate");
         assert!(!dsl.contains("__"), "no unfilled markers remain");
     }
 }

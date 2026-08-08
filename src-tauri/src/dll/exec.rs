@@ -315,7 +315,16 @@ pub fn run_in_arena(
         if running == 1 {
             saw_running = true;
         }
-        if (saw_running && running == 0) || cycle == target_cycle || test_result == TR_FAIL {
+        // Completion signals: the running 1→0 transition (racy for fast sims —
+        // a 3-cycle run can finish between 1ms polls), cycle reaching target
+        // (full pass), or a terminal result. win/fail are only ever written by
+        // handle_test_result (generated DSLs don't touch input_replay, which
+        // aliases settings[3]), so they're reliable end-of-run markers.
+        if (saw_running && running == 0)
+            || cycle == target_cycle
+            || test_result == TR_FAIL
+            || test_result == TR_WIN
+        {
             break test_result;
         }
         if Instant::now() > deadline {
@@ -611,6 +620,14 @@ mod tests {
         crate::circuit::codec::decode_circuit(&payload).expect("decode circuit")
     }
 
+    /// Build the level's `LevelTemplate` from its `test.si` fixture.
+    fn poc_template(level: &str) -> crate::dll::gen::LevelTemplate {
+        let content =
+            std::fs::read_to_string(format!("../sim-shim/fixtures/test_si/{level}.si"))
+                .expect("read test.si fixture");
+        crate::dll::test_si::parse(&content, level).expect("parse test.si")
+    }
+
     /// Compile + run a generated DSL for one test, returning (test_result, cycles).
     fn compile_and_run_dsl(dsl: &str, target_cycle: u64) -> (u64, i64) {
         let shim: &Shim = shim().expect("shim load");
@@ -641,31 +658,33 @@ mod tests {
     #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
     fn run_generated_and_gate_passes() {
         let circuit = load_poc_circuit("and_gate");
-        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::AND_GATE)
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template("and_gate"))
             .expect("generate and_gate DSL");
         let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
         eprintln!("generated and_gate: test_result={tr} cycles={cycles}");
         assert_eq!(tr, TR_PASS, "generated and_gate DSL must pass");
-        assert_eq!(cycles, 4);
+        // test.si's check_output returns `win` at cycle == len-1 (3), which
+        // handle_test_result treats as terminal → the run ends at cycle 3.
+        assert_eq!(cycles, 3, "win fires on the last truth-table row");
     }
 
     #[test]
     #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
     fn run_generated_or_gate_passes() {
         let circuit = load_poc_circuit("or_gate");
-        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::OR_GATE)
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template("or_gate"))
             .expect("generate or_gate DSL");
         let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
         eprintln!("generated or_gate: test_result={tr} cycles={cycles}");
         assert_eq!(tr, TR_PASS, "generated or_gate DSL must pass");
-        assert_eq!(cycles, 4);
+        assert_eq!(cycles, 3, "win fires on the last truth-table row");
     }
 
     #[test]
     #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
     fn run_generated_not_gate_passes() {
         let circuit = load_poc_circuit("not_gate");
-        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::NOT_GATE)
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template("not_gate"))
             .expect("generate not_gate DSL");
         let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
         eprintln!("generated not_gate: test_result={tr} cycles={cycles}");
@@ -686,7 +705,7 @@ mod tests {
             .expect("and_gate circuit has a kind-6 gate");
         circuit.components[nand_idx].kind = 3;
 
-        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::AND_GATE)
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template("and_gate"))
             .expect("generate broken DSL");
         let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
         eprintln!("generated broken and_gate: test_result={tr} cycles={cycles}");
@@ -705,7 +724,7 @@ mod tests {
         let mut circuit = load_poc_circuit("and_gate");
         circuit.wires.retain(|w| w.start != (12, 0));
 
-        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::AND_GATE)
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template("and_gate"))
             .expect("generate disconnected DSL");
         let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
         eprintln!("generated disconnected-output and_gate: test_result={tr} cycles={cycles}");
