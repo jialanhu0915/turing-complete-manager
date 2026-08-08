@@ -70,32 +70,26 @@ CSV-ish 格式，一行一关卡：
 
 ### 1.2 `schematics/<level>/<scheme>/circuit.data`
 
-**玩家电路存档**。二进制格式，**未逆向**。
+**玩家电路存档**。二进制格式。
 
 抽样：
 
 ```
-schematics/double_number/缺省/circuit.data   239 B
-schematics/double_number/缺省/circuit_backup_0.data   238 B
+schematics/double_number/缺省/circuit.data          239 B
+schematics/double_number/缺省/circuit_backup_0.data  238 B
 ```
 
 同一关卡的 backup 只比当前小 1 字节，可能是版本号字段。
 
 总计：
 - 84 个关卡有存档
-- 506 个文件（含 backup 与 ASM 程序）
-- 大部分文件 < 1 KB，最复杂关卡可能 > 100 KB
+- 112 个 (level, scheme) 组合
+- 112 个 `circuit.data` + 225 个 `circuit_backup_*.data`
+- 大部分文件 < 1 KB，最大 5439 B
 
-**已知**：
-- 二进制，不是 JSON/CSV
-- 含版本字段（猜测：头几个字节是版本号）
-- 大概率含组件拓扑（门、wire、layout）
+**结构骨架已识别**（magic byte、固定头/尾、ASCII 标签），完整 schema 未完成逆向。
 
-**未知**：
-- 完整 schema
-- 与 `replay.nim` 中 `#COUNTS` 数组的关系
-
-> 留作后续工作：完整逆向 `circuit.data`。
+详见 [`circuit-data-format.md`](circuit-data-format.md)。
 
 ### 1.3 `schematics/architecture/<level>/<scheme>/*.asm`
 
