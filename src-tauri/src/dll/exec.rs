@@ -600,4 +600,118 @@ mod tests {
             "NAND-only circuit must fail the and_gate truth table"
         );
     }
+
+    // ─── Phase 3/4: generator end-to-end (circuit.data → DSL → compile → run) ─
+
+    /// Load a PoC circuit fixture (extracted from the player's backup into
+    /// `sim-shim/fixtures/`), so the tests are hermetic — no live-save dep.
+    fn load_poc_circuit(level: &str) -> crate::circuit::model::Circuit {
+        let path = format!("../sim-shim/fixtures/{level}.data");
+        let payload = std::fs::read(&path).expect("read circuit fixture");
+        crate::circuit::codec::decode_circuit(&payload).expect("decode circuit")
+    }
+
+    /// Compile + run a generated DSL for one test, returning (test_result, cycles).
+    fn compile_and_run_dsl(dsl: &str, target_cycle: u64) -> (u64, i64) {
+        let shim: &Shim = shim().expect("shim load");
+        assert!(!dsl.contains("\n\n"), "generated DSL must have no blank lines");
+        let arena = Arena::alloc_any().expect("arena alloc_any");
+        let dsl = inject_preamble_addresses(dsl, arena.base());
+        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let _status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+        assert_eq!(out.field_3, 0, "compile must succeed, got {out:?}");
+
+        let code = machine_code(&out);
+        let entry_offset = out.field_2 as usize;
+        let outcome = run_in_arena(&arena, code, entry_offset, 0, target_cycle)
+            .expect("run_in_arena must complete");
+        (outcome.test_result, outcome.cycles_run)
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_and_gate_passes() {
+        let circuit = load_poc_circuit("and_gate");
+        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::AND_GATE)
+            .expect("generate and_gate DSL");
+        let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
+        eprintln!("generated and_gate: test_result={tr} cycles={cycles}");
+        assert_eq!(tr, TR_PASS, "generated and_gate DSL must pass");
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_or_gate_passes() {
+        let circuit = load_poc_circuit("or_gate");
+        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::OR_GATE)
+            .expect("generate or_gate DSL");
+        let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
+        eprintln!("generated or_gate: test_result={tr} cycles={cycles}");
+        assert_eq!(tr, TR_PASS, "generated or_gate DSL must pass");
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_not_gate_passes() {
+        let circuit = load_poc_circuit("not_gate");
+        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::NOT_GATE)
+            .expect("generate not_gate DSL");
+        let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
+        eprintln!("generated not_gate: test_result={tr} cycles={cycles}");
+        assert_eq!(tr, TR_PASS, "generated not_gate DSL must pass");
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_broken_circuit_fails() {
+        // Break the player's and_gate circuit: turn the NAND (kind 6) into a NOT
+        // (kind 3). Its two input wires then dangle, so it reads constant 0 →
+        // output is inverted from the level's expectation and must FAIL.
+        let mut circuit = load_poc_circuit("and_gate");
+        let nand_idx = circuit
+            .components
+            .iter()
+            .position(|c| c.kind == 6)
+            .expect("and_gate circuit has a kind-6 gate");
+        circuit.components[nand_idx].kind = 3;
+
+        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::AND_GATE)
+            .expect("generate broken DSL");
+        let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
+        eprintln!("generated broken and_gate: test_result={tr} cycles={cycles}");
+        assert_eq!(
+            tr, TR_FAIL,
+            "a circuit whose NAND became a NOT must fail the and_gate test"
+        );
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_disconnected_output_fails() {
+        // Sever the wire from the NOT gate to the Output component (the wire
+        // starting at the Output's input pin (12,0)). The output then reads a
+        // constant 0 and must fail the (1,1) truth-table row.
+        let mut circuit = load_poc_circuit("and_gate");
+        circuit.wires.retain(|w| w.start != (12, 0));
+
+        let dsl = crate::dll::gen::generate(&circuit, &crate::dll::levels::AND_GATE)
+            .expect("generate disconnected DSL");
+        let (tr, cycles) = compile_and_run_dsl(&dsl, 4);
+        eprintln!("generated disconnected-output and_gate: test_result={tr} cycles={cycles}");
+        assert_eq!(
+            tr, TR_FAIL,
+            "a disconnected output must fail the and_gate test"
+        );
+    }
 }
