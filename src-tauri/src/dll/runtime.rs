@@ -6,38 +6,45 @@
 //! - [x] Call NimMain once
 //! - [x] Call tccCompile() with a synthetic DSL source
 //! - [x] Verify CompileOutput gets populated
-//! - [ ] **Execute the JIT function pointer** — pending calling-convention reverse engineering
+//! - [x] **Execute the JIT machine code** (see `exec`) — compile, map arena,
+//!       drive commands, read sim_test_result (calling convention cracked 2026-08-08)
 //! - [ ] Wire into replay.nim 9-pointer preamble (settings/commands/etc.)
 //!
 //! See `docs/10-investigation/compile-signature.md` and `docs/30-usage/compile-dll-integration.md`.
 
+use super::exec;
 use super::loader::{shim, Shim};
 use super::signature::CompileOutput;
 use crate::circuit::model::Circuit;
 use std::ffi::CString;
 
 /// Result of a single `run_circuit_test` invocation.
-///
-/// For now this only reports the compile step. Once Phase D execution lands,
-/// `cycles_run` / `test_result` / `error` will be populated.
 #[derive(Debug, Clone)]
 pub struct CircuitRunReport {
     pub compiled_ok: bool,
     pub output: CompileOutput,
+    /// DSL TestResult (0 = pass, 1 = win, 2 = fail), if the compiled code ran.
+    pub test_result: Option<u64>,
+    /// Final `sim_cycle` from the executed run.
     pub cycles_run: i64,
     pub error: Option<String>,
 }
 
-/// Minimal end-to-end demo. Compiles a tiny DSL source through `compile.dll`
-/// and verifies the output buffer is populated.
+/// End-to-end: compile a DSL source through `compile.dll`, execute the JIT
+/// machine code against a sim arena, and read the test result.
 ///
-/// This does NOT yet invoke the JIT function pointer (call convention TBD).
-/// See `docs/10-investigation/compile-signature.md` "已知未解之谜" section.
+/// The JIT calling convention (cracked 2026-08-08): `compile()` writes
+/// `{ len, data(+8), entry_offset, status, err }`; we copy the machine code to
+/// executable memory, map the fixed-address sim arena (0x1000000..), and call
+/// `(code + entry_offset)()` — a no-arg dispatcher — on a background thread.
+/// See `docs/10-investigation/compile-signature.md` and `src/dll/exec.rs`.
 pub fn run_circuit_test(
     level_id: &str,
     scheme_id: &str,
     _circuit: &Circuit,
     dsl_source: &str,
+    test_number: u64,
+    target_cycle: u64,
 ) -> Result<CircuitRunReport, String> {
     let shim = shim()?;
 
@@ -48,7 +55,9 @@ pub fn run_circuit_test(
     // Nim `string` internally (correct NimStringV2 ABI by construction).
     let source = CString::new(dsl_source).map_err(|e| format!("CIRCUIT_NUL_BYTE|{e}"))?;
 
-    let result = unsafe {
+    // compile()'s return value is rax = out_buf pointer, NOT a status; the
+    // success signal is field_3 == 0 (13 = compiler error).
+    unsafe {
         shim.compile(
             &mut out as *mut CompileOutput as *mut u8,
             source.as_ptr(),
@@ -57,15 +66,32 @@ pub fn run_circuit_test(
         )
     };
 
-    if result != 0 {
-        return Err(format!("COMPILE_FAILED|status={result}"));
+    if out.field_3 != 0 {
+        return Ok(CircuitRunReport {
+            compiled_ok: false,
+            output: out,
+            test_result: None,
+            cycles_run: 0,
+            error: Some("COMPILER_ERROR".into()),
+        });
     }
 
+    // Extract raw machine code (data lives in compile.dll's heap, +8 past the
+    // Nim string payload's cap header; valid while compile.dll stays loaded).
+    let len = out.field_0 as usize;
+    let code_ptr = (out.field_1 as usize + 8) as *const u8;
+    // SAFETY: field_1 points into compile.dll's heap (loaded for process
+    // lifetime by the shim); field_0 is the byte length.
+    let code = unsafe { std::slice::from_raw_parts(code_ptr, len) };
+
+    let outcome = exec::run_test(code, out.field_2 as usize, test_number, target_cycle)
+        .map_err(|e| format!("EXEC_FAILED|{e}"))?;
+
     Ok(CircuitRunReport {
-        compiled_ok: out.is_populated(),
+        compiled_ok: true,
         output: out,
-        // TODO(phase-d-exec): call JIT function pointer, read sim_test_result
-        cycles_run: 0,
+        test_result: Some(outcome.test_result),
+        cycles_run: outcome.cycles_run,
         error: None,
     })
 }
@@ -198,5 +224,73 @@ mod tests {
             eprintln!("  {line}");
         }
         assert!(out.is_populated(), "compile output must be populated");
+    }
+
+    /// Phase A tool: dump the JIT machine code to a file so we can disassemble
+    /// the entry and confirm the calling convention / sim-arena addresses.
+    ///
+    /// The compiled machine code lives in compile.dll's heap: `field_1` points
+    /// at it (+8 skips the Nim string payload's `cap` header), `field_0` is the
+    /// length, `field_2` is the entry offset. (All confirmed empirically
+    /// 2026-08-08 — see compile-signature.md.)
+    ///
+    /// Output: sim-shim/and_gate.bin (raw x86-64). Disassemble from offset
+    /// `field_2` to inspect the entry:
+    ///   objdump -D -b binary -mi386:x86-64 --start-address=<field_2> \
+    ///     --stop-address=<field_2+0x400> ../sim-shim/and_gate.bin
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile (single-use, needs game + shim); run via --ignored"]
+    fn dump_and_gate_machine_code() {
+        let shim: &Shim = shim().expect("shim load");
+        let dsl_path = std::env::var("AND_GATE_DSL")
+            .unwrap_or_else(|_| "../sim-shim/and_gate_current.dsl".to_string());
+        let dsl = std::fs::read_to_string(&dsl_path).expect("read dsl");
+        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+        eprintln!("=== {dsl_path} (status={status}) ===");
+        eprintln!("output: {out:?}");
+
+        if out.field_3 != 0 {
+            eprintln!("COMPILER ERROR, skipping dump");
+            return;
+        }
+
+        let len = out.field_0 as usize;
+        let bytes_ptr = (out.field_1 as usize + 8) as *const u8;
+        // SAFETY: field_1 points into compile.dll's heap (valid for the process
+        // lifetime while compile.dll is loaded); field_0 is the byte length.
+        let code = unsafe { std::slice::from_raw_parts(bytes_ptr, len) };
+
+        let dump_path = "../sim-shim/and_gate.bin";
+        std::fs::write(dump_path, code).expect("write machine code dump");
+        eprintln!(
+            "wrote {len} bytes to {dump_path}; entry offset = {} (0x{:x})",
+            out.field_2, out.field_2
+        );
+
+        // Sanity: the DSL's sim-arena pointer 0x1000000 should appear as an
+        // absolute-address constant if the compiled code dereferences the
+        // arena directly (rather than getting a base from the caller).
+        let arena = 0x1000000u64.to_le_bytes();
+        let hits: Vec<usize> = code
+            .windows(8)
+            .enumerate()
+            .filter(|(_, w)| *w == arena)
+            .map(|(i, _)| i)
+            .collect();
+        eprintln!(
+            "0x1000000 absolute refs: {} hits: {:?}",
+            hits.len(),
+            &hits[..hits.len().min(10)]
+        );
     }
 }

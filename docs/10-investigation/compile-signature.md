@@ -84,15 +84,15 @@ void compile(
 2fdde45e7: ret
 ```
 
-| Offset | Size | 来源寄存器 | 推测语义 |
+| Offset | Field | 来源寄存器 | **实测语义（2026-08-08 and_gate 确认）** |
 |---|---|---|---|
-| `0x00` | 8 | `r14` | 可能是 `machine_code` Nim seq 的 `data` 指针 |
-| `0x08` | 8 | `r12`（=入参 mode） | mode 透传；或 `machine_code` 长度 |
-| `0x10` | 4 (高 4 字节 padding) | `r13d` | 错误码 / 状态枚举 |
-| `0x18` | 8 | `r15` | 错误信息 / 上下文 |
-| `0x20` | 8 | `rbp` | **JIT 编译出的函数指针**（最关键的字段） |
+| `0x00` | `field_0` | `r14` | **machine_code 长度**（279586） |
+| `0x08` | `field_1` | `r12` | **machine_code 数据指针**（compile.dll 堆内；**+8 才是字节**，Nim string payload 的 cap 头） |
+| `0x10` | `field_2` | `r13d` | **入口偏移**（entry = 拷贝基址 + 14132） |
+| `0x18` | `field_3` | `r15` | **状态**：0 = 成功，13 = 编译器错误 |
+| `0x20` | `field_4` | `rbp` | 成功时 0；错误时 = 错误消息指针 |
 
-⚠️ 字段语义**未完全确认**——需要与 `Turing Complete.exe` 的 `handle_request_compile_and_run` 调用点交叉验证。**当前足够用于 shim 第一版：shim 只透传输出结构体给 Rust**。
+⚠️ 早期文档写"field_4 = JIT fn ptr"是**错的**（被 epilogue 寄存器 rbp 误导）。真正模式见下文"JIT 调用约定（已破解）"。实测成功输出：`field_0=279586, field_1=堆指针, field_2=14132, field_3=0, field_4=0`。
 
 ---
 
@@ -182,6 +182,61 @@ struct NimStringV2   { NI len; NimStrPayload* p; }; // 8 字节对齐
 
 ---
 
+## JIT 调用约定（已破解 2026-08-08）
+
+**核心答案：编译出的机器码是一个无参入口，靠绝对地址内存通信。** 反汇编游戏 `jit__modelZsimulationZjitZjit_u1807` + `jit_function__..._u83` 确认：
+
+```text
+compile(out, code, 0) → 40 字节 { len, data, entry_off, status, err }
+
+exec  = VirtualAlloc(len, PAGE_EXECUTE_READWRITE) + copy(data+8, len)
+arena = VirtualAlloc(0x1000000, ..., PAGE_READWRITE)   # DSL preamble 固定地址
+call (exec + entry_off)()                               # 无参调用！
+```
+
+**游戏内部流程**（`handle_request_compile_and_run` + `jit`，exe 带完整 Nim 符号，objdump 直接反汇编）：
+
+```
+compile() → field_3==0 ? 
+  createThread(jit_function, {field_2, field_0, field_1})
+    jit(x=machine_code{len,data}, y=entry_off):
+      buf = VirtualAlloc(...); copyMem(buf, data+8, len); c_jit()
+      call (buf + y)     # 无参数
+```
+
+**关键事实：**
+1. **入口无参**（`call *%rax`，rcx/rdx/r8/r9 不设置）——机器码通过**绝对地址**读状态：DSL 的 `Ptr 0x1000000`（commands）等 9 个固定地址 + compile.dll 全局（`movabs $0x7ffc...`，**编译时烤进的本进程地址**，必须在编译它的同一进程执行）。
+2. **arena 必须映射在 0x1000000**——机器码用 4 字节 immediate（`mov $0x1000000,%esi`）直接寻址。入口自清零 sim_state/keyboard 缓冲。
+3. **机器码引用 compile.dll 全局**（字符串字面量等绝对地址）→ **必须在编译它的同一进程运行**（我们本来就如此，shim 持有 compile.dll）。
+4. **run_sim 是长驻分发器**，不是一次调用：entry() 会阻塞轮询 `commands[ctl_command_id]`，读到新命令才分发。→ 必须在**后台线程**跑，主线程写命令 + 轮询 + 发 quit（游戏用 `createThread`）。
+5. **退出用 `kernel32.ExitThread(0)`**（DSL `thread_exit()`）→ 线程异常终止，Rust `join()` 会 panic `"threads should not terminate unexpectedly"`，需 `catch_unwind` 吞掉。
+
+**驱动协议**（对应 DSL 的 run_sim / mode_run）：
+```
+commands[ctl_command] = run(0)         # 触发 run 分支
+commands[ctl_command_id] = 1           # 命令 id（race 检测）
+commands[ctl_test] = test_number       # 测试编号 → seed
+commands[ctl_cycle_speed_ms] = 10^13   # 节拍上限 → 自由运行
+settings[sim_target_cycle] = target    # 跑多少 cycle
+→ 后台线程 call entry()
+→ 轮询 sim_running (settings[15]) 1→0 或 sim_cycle==target 或 test_result==2
+→ 写 quit_simulation + ctl_command_id=2 → 线程退出
+```
+
+**⚠️ DSL 固定地址别名坑**：commands=0x1000000、settings=0x1000010、input_replay=0x1000020 在 8 字节对齐下**物理别名**：
+- `input_replay[0]` == `settings[2]`(sim_target_cycle) == `commands[4]`
+- `input_replay[1]` == `settings[3]`(sim_test_result) == `commands[5]`
+
+后果：mode_run 每个 cycle 写 `.input_replay[1] = 输入值`，会覆盖 sim_test_result。DSL 的 `set_setting(sim_test_result, max(get_setting(...), res))` 里 `get_setting` 读到的是**输入值**（如 96），`max(96, fail=2)=96` → fail 被吞掉。**生成器必须注意**：失败时直接 `set_setting(sim_test_result, U64 res)`，不要用 max(get_setting(...))。
+
+**执行验证**（2026-08-08，`dll::exec::tests::run_and_gate_machine_code`）：
+- and_gate_current.dsl 编译 → 279586 字节机器码 → 执行
+- 电路硬编码 result=0，对 condition=3 期望非零 → **check_output 返回 fail(2)，mode_run halt，test_result=2** ✓
+- `sim_cycle=1, running=0`（halt 于 cycle 1）✓
+- 完整实现见 `src-tauri/src/dll/exec.rs`
+
+---
+
 ## 已实测确认（2026-08-08，经 shim + Rust 测试）
 
 1. **shim 成功驱动 compile.dll**：`cargo test dll::runtime` 里传合法 DSL，无断言、无 COMPILER ERROR，输出结构体字段填充。
@@ -216,43 +271,23 @@ struct NimStringV2   { NI len; NimStrPayload* p; }; // 8 字节对齐
 1. **输出结构体的精确字段语义**——成功时 `field_0`/`field_1`/`field_2` 是 machine_code 相关（field_0≈8607 稳定计数、field_1=堆指针、field_2≈8521）；`field_3=0`/`field_4=0` 表示无错误。错误时 `field_3=13`、`field_4=错误消息指针`。
 2. **arg3 mode 的全部 bit 含义**——只确认了 bit 0 = log tokens
 3. **arg4 flags 的语义**——可能是 `simulation_state_length`
-4. **JIT 函数指针的调用约定**——成功编译后生成的机器码如何 invoke（最关键的下一步）
+4. ~~**JIT 函数指针的调用约定**~~ ——**已解决**（2026-08-08）：无参入口 + 可执行拷贝 + 入口偏移；arena 映射 0x1000000；后台线程驱动（见上文"JIT 调用约定（已破解）"）。执行已实测：and_gate 电路跑完、test_result=2（fail）。实现见 `src-tauri/src/dll/exec.rs`。
 5. ~~当前 DSL 的完整作用域规则~~ ——**已解决**（2026-08-08）：跨函数嵌套 def 需移顶层；`mode_run` 内不能有 `#if in_scope`；preamble 必须紧凑；**不能有空行**；电路 defs 先于 helpers。见上文"DSL dialect 转换要点"。
 
 ---
 
 ## 下一步建议
 
-### 短期（已验证可行）
+### 短期（已完成）
 
-shim + `run_circuit_test` 骨架已跑通编译。**真实 and_gate 电路已能编译**（`and_gate_current.dsl`，279586 字节机器码）。
+- **真实 and_gate 电路已能编译**（`and_gate_current.dsl`，279586 字节机器码）
+- **JIT 机器码已能执行**（`exec.rs`：可执行拷贝 + arena + 后台线程 + 命令驱动 → 读 test_result）。验证：电路对随机输入正确判 fail。
 
-下一步：
-1. **破解 JIT 机器码的调用约定**（见下方"中期"）——这是"运行电路拿结果"的最后一块
-2. 或**写 DSL 生成器**：从 circuit.data 生成当前-dialect DSL（按 `and_gate_current.dsl` 的紧凑格式，遵守上文的 5 个修复点）
+### 下一步
 
-### 中期
-
-1. 破解 JIT 机器码的调用约定（IDA 跟 `passes/jit/jit.nim` 的 emit 模式，或试调）
-2. 在 Rust 里 `VirtualAlloc` + 拷贝机器码 + `VirtualProtect(PAGE_EXECUTE)` 执行
-- 导入 compile.dll::compile
-- 直接把 4 个参数透传
-- 输出结构体的 40 字节原样回传给 Rust
-- Rust 端持有这 40 字节，不尝试调用 JIT 函数指针
-- 验证：调用能成功（结构体非空），但不实际运行仿真
-
-### 中期（解决"如何运行"）
-
-写一个 Nim 测试程序，调 `compile.dll::compile`，打印输出结构体的每个字段（用 `$` 重载 / `repr`）：
-- 对比"已知正确"的 DSL 输入（比如 replay.nim 第一段，已知 sim_state_length=267）
-- 推断每个字段是什么（machine_code 指针？长度？jit 函数指针？）
-- 之后才能决定 Rust 端怎么 invoke 仿真
-
-### 长期（如果必要）
-
-如果 JIT 函数指针的签名没法从反汇编稳定推断：
-- 上 IDA / Ghidra 看 `passes/jit/jit.nim` 编译后的 `emit_function_entry` 代码生成模式
-- 或者试调 + 调试器观察调用约定
+1. **写 DSL 生成器**：从 circuit.data 生成当前-dialect DSL（按 `and_gate_current.dsl` 的紧凑格式，遵守上文的 5 个修复点 + 别名坑）。这是把"执行"变成"验证 LLM 电路"的关键——生成器产出的电路才能跑出有意义的 pass/fail。
+2. **接入 Tauri 命令**：把 `run_circuit_test`（已接 exec）暴露为 `#[tauri::command]`，GUI 调它验证电路。
+3. 正确电路验证：用生成器产出一个**真会通过**的电路（如全加器），跑出 pass，端到端闭环。
 
 ---
 

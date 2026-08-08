@@ -171,6 +171,7 @@ def check_output(tick: Int, input: Input, output: Output) TestResult {
     if tick == 2047 {
         return win
     }
+    return pass
 }
 var commands = Ptr 0x1000000
 var settings = Ptr 0x1000010
@@ -219,7 +220,11 @@ def mode_run(target_cycle: Int) {
             if result != pass {
                 var res = result
                 halt() // Halt regardless of wether we are above '#CYCLE_PAST_FAIL'
-                set_setting(sim_test_result, max(get_setting(sim_test_result), U64 res))
+                // NOTE: cannot use max(get_setting(sim_test_result), res) here —
+                // settings[sim_test_result] aliases input_replay[1], which holds
+                // the last input value (e.g. 96), so max(96, fail=2) = 96. Write
+                // the failure directly (a fail is terminal for a single run).
+                set_setting(sim_test_result, U64 res)
             }
         }
         while .cycle < burst_target_cycle {

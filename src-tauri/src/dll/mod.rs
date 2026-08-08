@@ -7,6 +7,7 @@
 //! - [`signature`]: compile() output struct layout (40 bytes, 5 fields)
 //! - [`runtime`]: high-level `run_circuit_test()` end-to-end driver
 
+pub mod exec;
 pub mod loader;
 pub mod runtime;
 pub mod signature;
