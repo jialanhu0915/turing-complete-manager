@@ -6,6 +6,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 mod backup;
+mod circuit;
 mod config;
 mod levels;
 mod translations;
@@ -103,6 +104,60 @@ fn list_level_names() -> translations::LevelNames {
     translations::load_level_names()
 }
 
+#[tauri::command]
+fn list_schematics(level_id: String) -> Result<Vec<String>, String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    let dir = Path::new(&cfg.save_dir).join(&level_id);
+    let mut out = Vec::new();
+    if !dir.is_dir() {
+        return Ok(out);
+    }
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("CIRCUIT_LIST_FAILED|{e}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("CIRCUIT_LIST_FAILED|{e}"))?;
+        let name = entry.file_name();
+        let s = name.to_string_lossy();
+        if let Some(stem) = s.strip_suffix(".circuit") {
+            // Scheme subfolders are <scheme>/circuit.data — but the GUI only
+            // needs the scheme name. Future: also handle nested scheme dirs.
+            out.push(stem.to_string());
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+#[tauri::command]
+fn read_circuit(
+    level_id: String,
+    scheme_id: String,
+) -> Result<circuit::model::Circuit, String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    let path = Path::new(&cfg.save_dir)
+        .join(&level_id)
+        .join(&scheme_id)
+        .join("circuit.data");
+    let bytes = std::fs::read(&path).map_err(|e| format!("CIRCUIT_READ_FAILED|{e}"))?;
+    circuit::codec::decode_circuit(&bytes)
+}
+
+#[tauri::command]
+fn write_circuit(
+    level_id: String,
+    scheme_id: String,
+    payload: circuit::model::Circuit,
+) -> Result<(), String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    let bytes = circuit::codec::encode_v15(&payload)
+        .map_err(|e| format!("CIRCUIT_ENCODE_FAILED|{e}"))?;
+    let dir = Path::new(&cfg.save_dir)
+        .join(&level_id)
+        .join(&scheme_id);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("CIRCUIT_DIR_FAILED|{e}"))?;
+    std::fs::write(dir.join("circuit.data"), bytes)
+        .map_err(|e| format!("CIRCUIT_WRITE_FAILED|{e}"))
+}
+
 fn is_game_running_inner() -> bool {
     #[cfg(windows)]
     {
@@ -151,6 +206,9 @@ pub fn run() {
             list_levels,
             save_levels,
             list_level_names,
+            list_schematics,
+            read_circuit,
+            write_circuit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
