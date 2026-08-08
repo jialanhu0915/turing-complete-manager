@@ -2,80 +2,161 @@
 title: DLL 静态分析（compile.dll & game_engine.dll）
 last_updated: 2026-08-08
 scope: investigation
-status: 已审
+status: 已审（compile.dll 已重做签名调研）
 ---
 
 # DLL 静态分析
 
 ## 概要
 
-| DLL | 大小 | 平台 | 节数 | 导出数 | 性质 |
-|---|---|---|---|---|---|
-| `compile.dll` | 1,786,818 B (1.78 MB) | x86-64 | 19 | 少量（≥6） | Nim 编译产物 + LLVM 后端 |
-| `game_engine.dll` | 1,988,608 B (1.99 MB) | x86-64 | 6 | 10 | Godot 引擎的 C-ABI 薄包装 |
+| DLL | 大小 | 平台 | 性质 |
+|---|---|---|---|
+| `compile.dll` | 1,786,818 B (1.78 MB) | x86-64 | Nim 编译器 + LLVM 后端 + 仿真器运行时 |
+| `game_engine.dll` | 1,988,608 B (1.99 MB) | x86-64 | Godot 引擎的 C-ABI 薄包装 |
 
 文件位置：`E:\SteamLibrary\steamapps\common\Turing Complete\`
 
 ---
 
-## compile.dll
+## compile.dll（2026-08-08 重做）
 
 ### 性质
 
-确认是 **Nim 编译产物**。证据：
+`compile.dll` 是 **Nim 编译器本体 + 仿真器专用运行时**。证据：
 
-- 导出 `NimMain`、`NimMainInner`、`NimMainModule`、`NimDestroyGlobals`、`nim_program_result` — Nim 运行时标配符号
-- 字符串表中大量 LLVM 后端符号（`X86_TUNE_*`、`ARM_SPECIAL_REGISTERS`、`FloatRegisters`、`VectorRegister` 等）
-- 静态链入 Win32 API（`VirtualAlloc`、`VirtualFree`、`GetProcAddress`、`LoadLibraryA`、`TlsGetValue` 等）
+- 字符串表中大量 Nim 编译器 pass 符号：`compile_function__OOZpassesZfront95endZfront95end_u2948`、`compile_source__OOZcore_u144`、`passes/front_end`、`passes/back_end`、`passes/middle` 等
+- 内嵌 LLVM 后端符号（`X86_TUNE_*`、`ARM_SPECIAL_REGISTERS`、`VectorRegister` 等）
+- 静态链入 Win32 API（`VirtualAlloc`、`GetProcAddress`、`LoadLibraryA`）
+- 包含 `native_alloc/alloc` 的核心函数（`__allocate_clear`、`__allocate_data`、`__create_arenas` 等）—— 这就是 `replay.nim` 里 `import native_alloc/alloc` 解析的实际实现
 
-这意味着 `compile.dll` **内嵌了整个 Nim 编译器 + LLVM**，可以在运行时把任意 Nim 源（典型如 `replay.nim`）编译为机器码并执行。
+**关键解读**：`compile.dll` 不只是 Nim 编译器——它是 **为这个游戏专门打包的"Nim 编译器 + 仿真器运行时 + 仿真器内存分配器"一体包**。`replay.nim` 里的 `simulator_types`、`native_alloc/alloc` 实际指向 DLL 内部已编译的代码。
 
-### 导出表（精确名单）
+### 导出表（精确：仅 3 个）
 
-| 导出名 | 类型 | 推测用途 |
-|---|---|---|
-| `NimMain` | 函数 | Nim 运行时入口，调用任何 Nim 代码前必须先调 |
-| `NimMainInner` | 函数 | 同上的内部版本 |
-| `NimMainModule` | 函数 | 模块初始化（用户在 Nim 中写 `proc foo()` 时注册） |
-| `NimDestroyGlobals` | 函数 | 反初始化，释放 Nim 全局状态 |
-| `nim_program_result` | 数据 | Nim 程序退出码存放处 |
-| `compile` | 函数 | **自定义入口**，签名未确定（详见下文） |
+`objdump -p` 实测：
 
-> 共 ≥6 个导出。`compile` 是游戏开发者导出的主入口函数，但其参数列表与返回类型**目前无法静态确定**。需要 IDA / Ghidra / x64dbg 动态分析。
+| 导出名 | RVA | 类型 | 用途 |
+|---|---|---|---|
+| `NimMain` | `0x000f4dd0` | 函数 | Nim 运行时入口，**调用任何 Nim 代码前必须先调** |
+| `NimDestroyGlobals` | `0x000f47e0` | 函数 | Nim 运行时反初始化 |
+| `compile` | `0x000f4370` | 函数 | **核心入口**：编译并运行一段 Nim 源码 |
 
-### ABI 推测
+> ⚠️ 之前的 wiki 文档说"≥6 个导出"——**实测只有 3 个**。其他"导出"猜测（NimMainInner、NimMainModule、nim_program_result）实际是 DLL 内部函数，未通过 PE 导出表暴露。
 
-- **调用约定**：cdecl（x86-64 上等价于 System V/Microsoft x64）
-- **string 编码**：Nim 默认 `string` = `(len: int64, data: ptr char)`（长度前缀结构）
-- **seq[T]**：`(cap: int, len: int, data: ptr T)`，GC 头在 GC_ref 上
-- **GC**：默认 `refc` 或 `arc`，需要在 LoadLibrary 后立刻调 `NimMain()` 初始化
+### `compile` 函数签名分析
+
+通过 `objdump -d` 看 prologue（`0x2fdde4370`）：
+
+```asm
+00000002fdde4370 <compile>:
+   2fdde4370: push   %r15, %r14, %r13, %r12, %rbp, %rdi, %rsi, %rbx  ; 保存 8 个 callee-saved
+   2fdde437c: sub    $0x118,%rsp                                      ; 280 字节栈帧
+   2fdde4383: movaps %xmm6,0x100(%rsp)                                ; 保存 xmm6（SIMD 用？）
+   2fdde438b: pxor   %xmm0,%xmm0
+   2fdde438f: mov    (%rdx),%rbp                                       ; rdx 是 arg2 指针；rbp = arg2->field0
+   2fdde4392: mov    0x8(%rdx),%r14                                    ; r14 = arg2->field1
+   2fdde4396: lea    0x6ae1(%rbp),%rdx                                 ; rdx = arg2->field0 + 0x6AE1
+   2fdde439d: mov    %rcx,%rbx                                         ; 保存 arg1
+   2fdde43a0: lea    0x40(%rsp),%rcx                                   ; 新建 0x40 字节栈缓冲
+   2fdde43a5: mov    %r8d,%r12d                                        ; 保存 arg4 低 32 位
+   ... (后续读 simulation_state 等)
+```
+
+**推断的 C ABI 签名**：
+
+```c
+int32_t compile(
+    void*       arg1,   // rcx: Nim string（compile 的 Nim 源码，repr=ptr+len）
+    void*       arg2,   // rdx: 指向编译器上下文结构体的指针；至少含两个指针字段
+    int32_t     arg3,   // r8:  flags / mode
+    int32_t     arg4    // r9:  低 32 位有效，含义待定
+);
+```
+
+**关键证据**：
+- x86-64 Windows 调用约定（rcx/rdx/r8/r9）
+- arg2 是结构体指针：`mov (%rdx),%rbp` 读 offset 0，`mov 0x8(%rdx),%r14` 读 offset 8
+- arg2->field0 是一个内部数据结构（被以 +0x6AE1 偏移访问，0x6AE1=27361 字节处）
+- arg1 (rcx) 完整保留到 rbx，跨多个子调用 → 这是贯穿整个函数的"主输入"（最可能是 Nim 源码字符串）
+- 函数尾有多处 `ret`，且 prologue/epilogue 不对称（保存 8 个寄存器，ret 时只还原 5 个）→ **使用 Nim 的 setjmp/longjmp 异常处理**
+
+**未解之谜**：
+- arg3/arg4 的精确语义（flags？length？arena？）
+- arg2 结构体的完整字段布局
+- arg2->field0 的类型（编译器内部 context？还是 simulation state？）
+- 返回值是否就是 nim_program_result 的引用
 
 ### 从 Rust 调用 `compile.dll` 的潜在风险
 
-1. **必须先 `NimMain()`**——否则 GC 未初始化，所有 `seq`/`string` 操作会段错误
-2. **`compile` 函数签名未知**——需要在调试器里看反汇编才能知道参数类型
-3. **Nim ABI 与 Rust ABI 微妙不同**——尤其是 GC 对象跨 DLL 边界
-4. **导出少但内部巨大**——1.7 MB 代码全在内部，不可重定位，JIT 行为受限
+1. **必须先 `NimMain()`**——否则 GC/全局状态未初始化，所有 Nim 操作会段错误
+2. **`compile` 函数签名只有部分推断**——arg3/arg4 含义未知，结构体字段未完全映射
+3. **Nim GC 与 Rust ABI 微妙不同**——特别是 `string`、`seq[T]`、内部 context 跨 DLL 边界
+4. **DLL 内部不重定位**——编译期固定 `image base = 0x180000000`，如果 Rust 进程占用该地址会冲突
+5. **`compile.dll` 内嵌整个 Nim + LLVM**——1.7 MB 代码全在内部，不可裁剪
 
-**推荐路径**：写一个 thin C shim DLL（用 Nim 编译），由 Rust 调 shim，shim 调 `compile`。这样所有 GC 操作都留在 Nim 世界内。
+### 调用约定验证
+
+- **调用约定**：Microsoft x64（Windows 默认 cdecl 等价）
+- **string 编码**：Nim `string` = `(len: int64, data: ptr char)`（长度前缀结构）
+- **seq[T]**：`(cap: int, len: int, data: ptr T)`
+- **GC**：默认 `refc` 或 `arc`，需要在 LoadLibrary 后立刻调 `NimMain()` 初始化
+
+### 推荐路径：写 Nim C-ABI shim（不在本次范围内）
+
+由于 `compile` 签名不完整，**强烈不推荐** Rust 直接试调 `compile`。推荐路径：
+
+1. **写一个 Nim shim DLL**——内部 import `compile.dll::compile`，外部暴露清晰 C-ABI
+2. shim 负责：
+   - 构造正确格式的 source `string`
+   - 构造 simulator state 结构体（含 arena allocator header）
+   - 调用 `compile`
+   - 把结果通过简单 out-parameter 返回给 Rust
+3. **Rust 调 shim 而不是 compile.dll**——所有 Nim GC 操作留在 Nim 世界内，ABI 风险降到零
+
+实现步骤：
+
+```nim
+# shim.nim
+{.push dynlib.}
+
+proc compile_inner(src: string, ctx: ptr SomeStruct, flags, opts: cint): cint
+  {.importc, dynlib: "compile.dll".}
+
+type
+  CompileArgs = object
+    field0: pointer
+    field1: pointer
+    # ... 通过 Nim 编译器内部模块分析后填全
+
+{.pop.}
+
+proc tcc_compile(source_code: string, sim_state: pointer, state_len: cint,
+                out_pass: ptr cint, out_result: ptr cint): cint
+  {.exportc, dynlib, cdecl.} =
+  # 构造 CompileArgs，调用 compile_inner，解析返回值
+  ...
+```
+
+编译：`nim c --app:lib --out:shim.dll shim.nim`
+
+Rust 端 `libloading::Library::new("shim.dll")?` + 调用 `tcc_compile`。
 
 ### 节区结构
 
 | 节 | VA | VSize | 推测用途 |
 |---|---|---|---|
-| `.text` | 0x1000 | 1,026,528 | 可执行代码 |
-| `.data` | 0xFC000 | 2,144 | 已初始化数据 |
-| `.rdata` | 0xFD000 | 161,016 | 只读数据、字符串 |
-| `.pdata` | 0x125000 | 25,584 | 异常处理表 |
-| `.xdata` | 0x12C000 | 26,752 | 异常处理展开信息 |
-| `.bss` | 0x133000 | 89,088 | 未初始化数据（运行时分配） |
-| `.edata` | 0x149000 | 116 | 导出表 |
-| `.idata` | 0x14A000 | 2,636 | 导入表 |
-| `.tls` | 0x14B000 | 16 | 线程局部存储 |
-| `.reloc` | 0x14C000 | 3,572 | 基址重定位表 |
+| `.text` | 0x2fdcf1000 | 1,026,528 | 可执行代码 |
+| `.data` | 0x2fddec000 | 2,144 | 已初始化数据 |
+| `.rdata` | 0x2fdded000 | 161,016 | 只读数据、字符串、Nim pass 符号名 |
+| `.pdata` | 0x2fde15000 | 25,584 | 异常处理表 |
+| `.xdata` | 0x2fde1c000 | 26,752 | 异常处理展开信息 |
+| `.bss` | 0x2fde23000 | 89,088 | 未初始化数据（运行时分配） |
+| `.edata` | 0x2fde39000 | 116 | 导出表（**实测只有 3 项**） |
+| `.idata` | 0x2fde3a000 | 2,636 | 导入表 |
+| `.tls` | 0x2fde3b000 | 16 | 线程局部存储 |
+| `.reloc` | 0x2fde3c000 | 3,572 | 基址重定位表 |
+| `.debug_*` | — | ~64K | DWARF 调试信息 |
 | 8 个匿名节 | — | 总计 ~189K | LLVM/Nim 内部数据 |
-
-LLVM 嵌入 8 个匿名节，占总大小 23% 左右。
 
 ---
 
@@ -102,19 +183,18 @@ Godot 引擎的 C-ABI 薄包装层。**只关心窗口/输入事件**，对电�
 
 ### 是否需要集成？
 
-**本次调研结论：不需要**。
-- 这些函数只暴露窗口管理 + 键盘输入事件
-- 电路仿真的核心数据流走 `compile.dll` + `replay.nim`，不走 `game_engine.dll`
-- 集成它没有带来额外能力
+**结论：不需要**。这些函数只暴露窗口管理 + 键盘输入事件。电路仿真的核心数据流走 `compile.dll` + `replay.nim`，不走 `game_engine.dll`。
 
 如果未来要注入 hook 拦截玩家操作（用于自动重放），可能要用 `pre_render`/`post_render` 回调。但本次不做。
 
 ---
 
-## 后续建议
+## 后续建议（更新版）
 
-1. **优先做 IDA / Ghidra 静态分析 `compile.dll`**——确认 `compile` 的真实函数签名（参数个数、类型、是否 cdecl）
-2. **优先做动态追踪**——在游戏运行 `replay.nim` 时用 x64dbg 设断点，看 `compile` 被如何调用
-3. **写一个最小的 Nim C-ABI shim**——Rust 调 shim，shim 调 `compile`，规避 GC ABI 风险
+1. ❌ ~~IDA / Ghidra 静态分析 `compile.dll` 完整签名~~ — 已用 `objdump` 部分推断（4 个参数，结构体 context），完整结构体字段还需 IDA Pro
+2. ✅ **写 Nim C-ABI shim DLL**（推荐路径）—— 内部封装 `compile.dll::compile`，暴露清晰的 C 接口给 Rust 调用
+3. ✅ 在 Nim 端做 `simulator_state` 构造（用 `replay.nim` 已有的 `simulator_types` + `native_alloc/alloc`）
+4. 写一个最小 Nim 测试程序（不带 GUI），从 `compile.dll` 加载 `compile`，传入一个 1 行的 Nim 源码，验证返回
+5. Rust 端通过 `libloading` 加载 shim，先做"最小 demo"：把 `simulate_combinational` 的输出作为输入，写一个完整的电路文件，让 `compile.dll` 跑通
 
-这些是 `20-design/index.md` 中真正动手前的必经步骤。
+`D-7`（注入机制）的具体实现路径取决于 `compile.dll` 的实际可调用性——目前看 shim 路线最稳。
