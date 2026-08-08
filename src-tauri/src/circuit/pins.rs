@@ -336,7 +336,8 @@ fn rotate_offset(offset: (i16, i16), rotation: u8) -> (i16, i16) {
     }
 }
 
-fn positioned_pins(component: &Component, component_index: usize) -> Vec<PositionedPin> {
+/// Position a component's pins in absolute circuit coordinates.
+pub fn positioned_pins(component: &Component, component_index: usize) -> Vec<PositionedPin> {
     let Some(specs) = pin_specs_for(component) else {
         return Vec::new();
     };
@@ -548,12 +549,11 @@ pub fn resolve(circuit: &Circuit) -> Result<Connectivity, String> {
 mod tests {
     use super::*;
 
+    /// Load a PoC circuit fixture (extracted from the player's backup into
+    /// `sim-shim/fixtures/`), so the tests are hermetic — no live-save dep.
     fn load_poc(level: &str) -> Circuit {
-        let path = format!(
-            "{}/Turing Complete/schematics/{level}/缺省/circuit.data",
-            std::env::var("APPDATA").unwrap()
-        );
-        let payload = std::fs::read(&path).expect("read circuit.data");
+        let path = format!("../sim-shim/fixtures/{level}.data");
+        let payload = std::fs::read(&path).expect("read circuit fixture");
         super::super::codec::decode_circuit(&payload).expect("decode circuit")
     }
 

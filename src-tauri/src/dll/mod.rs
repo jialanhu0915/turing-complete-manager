@@ -8,6 +8,8 @@
 //! - [`runtime`]: high-level `run_circuit_test()` end-to-end driver
 
 pub mod exec;
+pub mod gen;
+pub mod levels;
 pub mod loader;
 pub mod runtime;
 pub mod signature;
