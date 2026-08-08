@@ -41,21 +41,23 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 
 ## 本次边界
 
-✅ 在范围：
-- 静态分析两个 DLL 的 PE 结构与导出符号
-- grep/抽样分析 `replay.nim` 的 schema
-- 把发现写成 wiki
+### 已落地（调研结果沉淀在 docs/）
 
-❌ 不在范围：
-- 实际调用 `compile.dll`（`compile` 函数签名未确定）
-- 实现 `replay.nim` 解析器
-- 编写 CLI
-- 编写 LLM 优化循环
-- 修改游戏本体
-- 修改存档
-- 逆向 `circuit.data` 二进制格式（仅概览）
+- ✅ 静态分析两个 DLL 的 PE 结构与导出符号 → `10-investigation/dll-analysis.md`
+- ✅ grep/抽样分析 `replay.nim` 的 schema → `10-investigation/replay-format.md`
+- ✅ `circuit.data` 二进制格式已通过外部参考实现 `tc-save-lab` 完整破解（v15 严格读写 + v7/v13/v14 只读）→ `10-investigation/circuit-data-format.md`
+- ✅ 关卡脚手架提取（输入/输出 pin 元数据）已有 Python 实现可直接复用
+- ✅ 92 个主线关卡 immutable 组件清单已生成（`examples/*/scaffold/immutable.json`）
 
-后续功能另起计划。
+### 待办（后续独立计划）
+
+- ❌ 实际调用 `compile.dll` 驱动游戏本体（`compile` 函数签名未确定）
+- ❌ Rust 移植 codec 到 Tauri app（让 GUI 也能读写电路）
+- ❌ `replay.nim` 解析器（**当前不需要**——`replay.nim` 只是仿真录屏，不直接服务电路优化）
+- ❌ CLI 工具 + LLM 优化循环
+- ❌ 修改游戏本体 / Steam Cloud 同步 / `levels.txt`（已与游戏自己维护机制冲突）
+
+详见 `20-design/index.md`。
 
 ## 术语对照
 
@@ -73,6 +75,12 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 - 项目根目录：`B:\VS_Code_Project\turing-complete-manager`
 - 游戏目录：`E:\SteamLibrary\steamapps\common\Turing Complete`
 - 用户存档目录：`C:\Users\<user>\AppData\Roaming\Turing Complete`
+- **外部参考实现**：`B:\VS_Code_Project\turing-complete-optimizer`（`tc-save-lab`）
+  - 已实现 `circuit.data` 完整 v15 读写 + v7/v13/v14 只读解码
+  - 92 个主线关卡的脚手架/基线/候选目录
+  - 离线组合逻辑穷举验证（语义对齐 `replay.nim`）
+  - **完全离线**：零代码触碰 `compile.dll` / `replay.nim` / 游戏进程
+  - 我们 manager CLI 的策略：抄实现到 Rust（不强制 git submodule）
 
 ## 相关文档
 

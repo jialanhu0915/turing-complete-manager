@@ -87,7 +87,11 @@ schematics/double_number/缺省/circuit_backup_0.data  238 B
 - 112 个 `circuit.data` + 225 个 `circuit_backup_*.data`
 - 大部分文件 < 1 KB，最大 5439 B
 
-**结构骨架已识别**（magic byte、固定头/尾、ASCII 标签），完整 schema 未完成逆向。
+**结构骨架已识别**，完整 schema 已通过外部参考实现 [`tc-save-lab`](../../20-design/index.md) 实测验证：
+
+- **v15**（玩家存档主流版本）：严格读写已实现
+- **v7/v13/v14**（旧格式，少量遗留）：只读已实现
+- 实测解码样本：`and_gate`、`not_gate`、`or_gate`、`full_adder`、`byte_adder` 等共 5 个本地存档，与 Python tc-save-lab 输出字段完全一致
 
 详见 [`circuit-data-format.md`](circuit-data-format.md)。
 

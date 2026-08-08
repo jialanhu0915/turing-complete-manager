@@ -15,6 +15,40 @@ Turing Complete 仿真器支持 **101 种电路组件**（`com_*`）。
 
 ---
 
+## 关于 `kind` 字段（circuit.data vs ComponentType 枚举）
+
+`circuit.data` 二进制中的 `kind: u16` 字段**不是** ComponentType 枚举顺序（0..100）。它们是两套独立的编号：
+
+| 编号空间 | 范围 | 来源 |
+|---|---|---|
+| `replay.nim` `ComponentType` 枚举 | 0..100（本文档表格的"枚举顺序"列） | 嵌入 DSL 编译器侧 |
+| `circuit.data` `kind` 字段 | 见下表（独立 ID） | 游戏存档二进制侧 |
+
+**已知 `kind` 集合**（实测于 `tc-save-lab/src/tc_save_lab/scaffold.py`）：
+
+```python
+LEVEL_INPUT_KINDS    = frozenset({60, 61, 62, 63, 64, 65, 106})
+LEVEL_OUTPUT_KINDS   = frozenset({40, 58, 68, 69, 70, 73, 74, 75, 77})
+CUSTOM_COMPONENT_KIND = 78
+```
+
+**实测样本**（用 tc-save-lab codec 解码本地玩家存档）：
+
+| 关卡 | 解出 kind | 解读 |
+|---|---|---|
+| `not_gate` 的输入 pin | 60 | 1-pin input |
+| `and_gate` / `or_gate` 的输入 pin | 63 | 2-pin input |
+| 多数关卡的输出 pin | 68 | 通用输出 |
+| `full_adder` 的 Sum / Carry | 69 | Sum/Carry 输出（8-pin） |
+| `or_gate` 的 OR 门 | 3 | 与 replay.nim 枚举一致 (`com_or_bit`) |
+| `and_gate` / `not_gate` 的逻辑门 | 6 | （**注**：实测 = 6，但具体对应哪种门待测） |
+
+> ⚠️ 门类（com_and_bit、com_xor_bit 等）在 circuit.data 里的 kind 编号**尚未系统逆向**——只有 com_or_bit 实证匹配枚举序号 3，其余需要逐关卡穷举。
+> 
+> 当前若需把电路写入 circuit.data，**优先通过 LLM 穷举验证** + 与 Python tc-save-lab 输出 diff 来发现 kind 编号。
+
+---
+
 ## 一、基础门（9 项）
 
 | 名称 | 功能 |
