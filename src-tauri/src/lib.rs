@@ -6,9 +6,9 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 mod backup;
-mod circuit;
+pub mod circuit;
 mod config;
-mod dll;
+pub mod dll;
 mod game;
 mod levels;
 mod translations;
@@ -116,7 +116,7 @@ fn list_level_names() -> translations::LevelNames {
 #[tauri::command]
 fn list_schematics(level_id: String) -> Result<Vec<String>, String> {
     let cfg = config::load().ok_or("NOT_CONFIGURED")?;
-    let dir = Path::new(&cfg.save_dir).join(&level_id);
+    let dir = Path::new(&cfg.save_dir).join("schematics").join(&level_id);
     let mut out = Vec::new();
     if !dir.is_dir() {
         return Ok(out);
@@ -126,9 +126,11 @@ fn list_schematics(level_id: String) -> Result<Vec<String>, String> {
         let entry = entry.map_err(|e| format!("CIRCUIT_LIST_FAILED|{e}"))?;
         let name = entry.file_name();
         let s = name.to_string_lossy();
-        if let Some(stem) = s.strip_suffix(".circuit") {
-            // Scheme subfolders are <scheme>/circuit.data — but the GUI only
-            // needs the scheme name. Future: also handle nested scheme dirs.
+        // Subfolder scheme: `<scheme>/circuit.data` (the GUI's write path).
+        if entry.path().is_dir() && entry.path().join("circuit.data").is_file() {
+            out.push(s.into_owned());
+        } else if let Some(stem) = s.strip_suffix(".circuit") {
+            // Legacy flat-file scheme.
             out.push(stem.to_string());
         }
     }
@@ -143,6 +145,7 @@ fn read_circuit(
 ) -> Result<circuit::model::Circuit, String> {
     let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     let path = Path::new(&cfg.save_dir)
+        .join("schematics")
         .join(&level_id)
         .join(&scheme_id)
         .join("circuit.data");
@@ -160,6 +163,7 @@ fn write_circuit(
     let bytes = circuit::codec::encode_v15(&payload)
         .map_err(|e| format!("CIRCUIT_ENCODE_FAILED|{e}"))?;
     let dir = Path::new(&cfg.save_dir)
+        .join("schematics")
         .join(&level_id)
         .join(&scheme_id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("CIRCUIT_DIR_FAILED|{e}"))?;
