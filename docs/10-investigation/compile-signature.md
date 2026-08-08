@@ -189,8 +189,25 @@ struct NimStringV2   { NI len; NimStrPayload* p; }; // 8 字节对齐
    - `switch expr` + 缩进 `case {}` 块（`quit_simulation {}` 不是独立语句）
    - `var x = <value>`（没有 `var x: Type` 无初始化）
    - 顶层前向引用 OK、同函数嵌套前向引用 OK
-3. **replay.nim 是旧 dialect**：用 `sim_tick`/`target_tick`，当前编译器用 `sim_cycle`/`sim_target_cycle`。且 replay.nim 依赖**跨函数嵌套 def 调用**（`mode_run` 调 `run_sim` 循环里定义的 `get_input`），当前编译器不支持 → 真实 and_gate DSL 编译失败 `No function matched get_input(Int)`。
+3. **replay.nim 是旧 dialect**：用 `sim_tick`/`target_tick`，当前编译器用 `sim_cycle`/`sim_target_cycle`。且 replay.nim 依赖**跨函数嵌套 def 调用**（`mode_run` 调 `run_sim` 循环里定义的 `get_input`），当前编译器不支持 → 原始 and_gate DSL 编译失败 `No function matched get_input(Int)`。
 4. **标准库前缀**：`compile` 自动拼接 27361 字节（1506 行）DSL 标准库（`prefix.dsl` 已提取）——含 82 个函数（`memory_*`, `big_int_*`, `print_using_stack`, `allocate_raw` 等），**不含** `get_input`/`get_output` 等仿真函数（那些在电路 DSL 里定义）。
+5. **✅ 真实 and_gate 电路编译成功**（2026-08-08，`sim-shim/and_gate_current.dsl`）：把 replay.nim 的 and_gate DSL 转成当前 dialect 后，经 shim 编译无错误，输出 279586 字节机器码（`field_3=0`/`field_4=0`）。**真实电路（组件连线 + 测试逻辑）能通过游戏本体编译器生成机器码**——这是"用游戏本体验证 LLM 电路"的核心可行性证明。
+
+### DSL dialect 转换要点（`sim-shim/convert_dialect.py`）
+
+从 replay.nim（旧 dialect）转成当前 compile.dll 可编译的 DSL，需要 5 个修复（都是**实测踩坑**得出的 compile.dll 行为）：
+
+| # | 问题 | 修复 | 证据 |
+|---|---|---|---|
+| 1 | `sim_tick`/`target_tick` 命名 | 全局改名 `tick→cycle`（`sim_cycle`/`target_cycle`/`ctl_cycle_speed_ms`/`burst_cycles`/`nanos_per_cycle`/`get_target_cycle`...） | exe 字符串 codegen 模板 |
+| 2 | 跨函数嵌套 def 调用（`mode_run` 调 run_sim 内定义的 `get_input`/`check_output`） | 移到**顶层 def** | `No function matched get_input(Int)` |
+| 3 | `mode_run` 内的 `#if in_scope(on_ui_update){...}` 块 | **删除**——它破坏嵌套 def 注册（halt 等找不到了） | probe 二分：加 #if 就失败，去掉就过 |
+| 4 | preamble 对齐空格（`var commands                          = Ptr 0x1000000`） | **紧凑化**（单空格）——对齐空格破坏变量注册（`input_replay not in scope`） | n23 换成对齐空格即失败 |
+| 5 | **空行**：replay.nim 的双空行格式 | **全部去除**——双空行破坏嵌套 def 注册 | 无空行编译通过、有双空行 `No function matched halt()` |
+
+⚠️ **定义顺序也很关键**：电路 defs（`get_input`/`check_output`/`mode_run`/`mode_refresh`）必须在 helper 区（`ComponentType`/`ui_*`/`get_*`/`set_error`/`reset_sim`）**之前**定义。转换器按此顺序输出。
+
+> 这些怪癖（空行、对齐空格、#if 位置、定义顺序）都是 compile.dll 前端的实现细节 bug/限制。**后续 DSL 生成器必须按 `and_gate_current.dsl` 的紧凑格式输出**，否则同样的错误会出现。
 
 ---
 
@@ -200,7 +217,7 @@ struct NimStringV2   { NI len; NimStrPayload* p; }; // 8 字节对齐
 2. **arg3 mode 的全部 bit 含义**——只确认了 bit 0 = log tokens
 3. **arg4 flags 的语义**——可能是 `simulation_state_length`
 4. **JIT 函数指针的调用约定**——成功编译后生成的机器码如何 invoke（最关键的下一步）
-5. **当前 DSL 的完整作用域规则**——跨函数嵌套 def 如何改写（get_input 需移到顶层 def）
+5. ~~当前 DSL 的完整作用域规则~~ ——**已解决**（2026-08-08）：跨函数嵌套 def 需移顶层；`mode_run` 内不能有 `#if in_scope`；preamble 必须紧凑；**不能有空行**；电路 defs 先于 helpers。见上文"DSL dialect 转换要点"。
 
 ---
 
@@ -208,9 +225,11 @@ struct NimStringV2   { NI len; NimStrPayload* p; }; // 8 字节对齐
 
 ### 短期（已验证可行）
 
-shim + `run_circuit_test` 骨架已跑通编译。要验证真实电路，需要：
-1. 把 `replay.nim` 的 DSL 改成当前 dialect（`sim_tick→sim_cycle`、嵌套 def 移到顶层）
-2. 或**直接从电路生成 DSL**（理解 `mode_refresh` 的组件更新代码生成模式）
+shim + `run_circuit_test` 骨架已跑通编译。**真实 and_gate 电路已能编译**（`and_gate_current.dsl`，279586 字节机器码）。
+
+下一步：
+1. **破解 JIT 机器码的调用约定**（见下方"中期"）——这是"运行电路拿结果"的最后一块
+2. 或**写 DSL 生成器**：从 circuit.data 生成当前-dialect DSL（按 `and_gate_current.dsl` 的紧凑格式，遵守上文的 5 个修复点）
 
 ### 中期
 

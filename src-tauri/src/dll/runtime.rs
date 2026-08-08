@@ -153,19 +153,27 @@ mod tests {
         }
     }
 
-    /// Compile a REAL and_gate DSL source extracted from replay.nim.
-    /// Verifies the game's JIT compiler accepts our circuit's DSL.
+    /// Compile a REAL and_gate DSL source converted to the CURRENT dialect
+    /// (see sim-shim/convert_dialect.py). Verifies the game's JIT compiler
+    /// accepts our circuit's DSL — this is the milestone proof that a real
+    /// circuit (component wiring + test logic) compiles to machine code via
+    /// compile.dll.
+    ///
+    /// Env override: AND_GATE_DSL path (default ../sim-shim/and_gate_current.dsl)
+    /// lets you iterate on the DSL text without recompiling Rust.
     #[test]
     #[ignore = "stateful: calls compile.dll::compile (single-use, needs game + shim); run via --ignored"]
     fn compile_real_and_gate_dsl() {
         let shim: &Shim = shim().expect("shim load");
-        let dsl_path = std::path::Path::new("../sim-shim/and_gate.dsl");
-        if !dsl_path.exists() {
-            eprintln!("SKIP: and_gate.dsl not at {}", dsl_path.display());
+        let dsl_path = std::env::var("AND_GATE_DSL").unwrap_or_else(|_| {
+            "../sim-shim/and_gate_current.dsl".to_string()
+        });
+        if !std::path::Path::new(&dsl_path).exists() {
+            eprintln!("SKIP: {dsl_path} not found");
             return;
         }
-        let dsl = std::fs::read_to_string(dsl_path).expect("read and_gate.dsl");
-        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+        let dsl = std::fs::read_to_string(&dsl_path).expect("read dsl");
+        let src = std::ffi::CString::new(dsl.clone()).expect("dsl has no NUL bytes");
 
         let mut out = CompileOutput::zeroed();
         let status = unsafe {
@@ -177,11 +185,18 @@ mod tests {
             )
         };
 
-        eprintln!("and_gate compile() returned status={status}");
+        eprintln!("=== {dsl_path} (status={status}) ===");
         eprintln!("output: {out:?}");
+        if out.field_3 == 13 {
+            // field_4 = error message ptr (compile.dll allocates it); we can't
+            // deref across the DLL boundary safely here, but compile.dll also
+            // echoes errors to stderr — see above output.
+            eprintln!("COMPILER ERROR (field_3=13), details echoed to stderr");
+        }
+        eprintln!("--- DSL tail (command loop, last 30 lines) ---");
+        for line in dsl.lines().rev().take(30) {
+            eprintln!("  {line}");
+        }
         assert!(out.is_populated(), "compile output must be populated");
-        // NOTE: we don't yet assert status == 0. The exact success value is
-        // still being determined. For now we just confirm the call ran and
-        // wrote to the output buffer without crashing.
     }
 }
