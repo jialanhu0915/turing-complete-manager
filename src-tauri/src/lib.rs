@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 mod backup;
 mod circuit;
 mod config;
+mod dll;
 mod levels;
 mod translations;
 

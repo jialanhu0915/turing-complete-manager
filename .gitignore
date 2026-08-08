@@ -34,4 +34,6 @@ dist-ssr
 # Nim shim build artifacts
 /sim-shim/shim.dll
 /sim-shim/nimcache/
+/sim-shim/nimcache_*/
 /sim-shim/*.o
+/sim-shim/*.exe
