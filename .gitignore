@@ -30,3 +30,8 @@ dist-ssr
 # Rust build artifacts and Tauri-generated bindings
 /src-tauri/target/
 /src-tauri/gen/
+
+# Nim shim build artifacts
+/sim-shim/shim.dll
+/sim-shim/nimcache/
+/sim-shim/*.o
