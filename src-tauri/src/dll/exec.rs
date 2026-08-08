@@ -634,7 +634,7 @@ mod tests {
         assert!(!dsl.contains("\n\n"), "generated DSL must have no blank lines");
         let arena = Arena::alloc_any().expect("arena alloc_any");
         let dsl = inject_preamble_addresses(dsl, arena.base());
-        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+        let src = std::ffi::CString::new(dsl.clone()).expect("dsl has no NUL bytes");
 
         let mut out = CompileOutput::zeroed();
         let _status = unsafe {
@@ -645,7 +645,10 @@ mod tests {
                 267,
             )
         };
-        assert_eq!(out.field_3, 0, "compile must succeed, got {out:?}");
+        assert_eq!(
+            out.field_3, 0,
+            "compile must succeed, got {out:?}\n--- DSL ---\n{dsl}"
+        );
 
         let code = machine_code(&out);
         let entry_offset = out.field_2 as usize;
@@ -713,6 +716,69 @@ mod tests {
             tr, TR_FAIL,
             "a circuit whose NAND became a NOT must fail the and_gate test"
         );
+    }
+
+    /// Generate + compile + run `fixture` for `level`, asserting PASS.
+    fn assert_level_passes(fixture: &str, level: &str, target: u64) {
+        let circuit = load_poc_circuit(fixture);
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template(level))
+            .unwrap_or_else(|e| panic!("generate {level}: {e}"));
+        let (tr, cycles) = compile_and_run_dsl(&dsl, target);
+        eprintln!("generated {level} ({fixture}): test_result={tr} cycles={cycles}");
+        assert_eq!(tr, TR_PASS, "generated {level} ({fixture}) must pass");
+    }
+
+    /// Generate + compile + run `fixture` for `level`, asserting FAIL (the
+    /// fixture is a known-broken circuit the harness must reject).
+    fn assert_level_fails(fixture: &str, level: &str, target: u64) {
+        let circuit = load_poc_circuit(fixture);
+        let dsl = crate::dll::gen::generate(&circuit, &poc_template(level))
+            .unwrap_or_else(|e| panic!("generate {level}: {e}"));
+        let (tr, cycles) = compile_and_run_dsl(&dsl, target);
+        eprintln!("generated {level} ({fixture}): test_result={tr} cycles={cycles}");
+        assert_eq!(tr, TR_FAIL, "generated {level} ({fixture}) must fail");
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_xor_gate_passes() {
+        // Player's Default: XOR from 4 NANDs. The hint is a gate fragment (no I/O).
+        assert_level_passes("xor_gate", "xor_gate", 8);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_nor_gate_passes() {
+        assert_level_passes("nor_gate", "nor_gate", 8);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_bit_adder_passes() {
+        // Hint solution: com_and_bit (4) + com_xor_bit (10), Sum/Carry outputs.
+        assert_level_passes("bit_adder_hint", "bit_adder", 8);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_byte_xor_passes() {
+        // The player's Default computes (a^b)^(a&b) ≠ XOR → correctly FAILS
+        // (the harness rejects broken circuits; word gates are exercised).
+        assert_level_fails("byte_xor", "byte_xor", 2050);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_byte_not_passes() {
+        // splitter_bit_8 (17) + maker_bit_8 (16) + com_not_bit.
+        assert_level_passes("byte_not", "byte_not", 2050);
+    }
+
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_generated_byte_nand_passes() {
+        // splitter/maker + com_nand_bit.
+        assert_level_passes("byte_nand", "byte_nand", 2050);
     }
 
     #[test]

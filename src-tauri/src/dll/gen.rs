@@ -25,7 +25,7 @@ use crate::circuit::pins::{self, Connectivity, PinDir};
 ///
 /// Built from `test.si` by [`crate::dll::test_si::parse`] (the game's per-level
 /// test spec) — no hand-authored templates.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LevelTemplate {
     /// `type Input { ... }` block.
     pub input_struct: String,
@@ -49,7 +49,24 @@ pub struct LevelTemplate {
 fn kind_to_enum(kind: u16) -> Option<usize> {
     Some(match kind {
         3 => 2,   // com_not_bit
+        4 => 3,   // com_and_bit
+        5 => 4,   // com_and_3_bit
         6 => 5,   // com_nand_bit
+        7 => 6,   // com_or_bit
+        8 => 7,   // com_or_3_bit
+        9 => 8,   // com_nor_bit
+        10 => 9,  // com_xor_bit
+        11 => 10, // com_xnor_bit
+        16 => 15, // com_maker_bit_8
+        17 => 16, // com_splitter_bit_8
+        18 => 17, // com_not_word
+        19 => 18, // com_or_word
+        20 => 19, // com_and_word
+        21 => 20, // com_nand_word
+        22 => 21, // com_xor_word
+        23 => 22, // com_nor_word
+        24 => 23, // com_xnor_word
+        29 => 28, // com_neg
         60 => 56, // com_level_input_1_pin
         61 => 57, // com_level_input_word
         63 => 59, // com_level_input_2_pin
@@ -63,7 +80,24 @@ fn kind_to_enum(kind: u16) -> Option<usize> {
 fn kind_to_name(kind: u16) -> Option<&'static str> {
     Some(match kind {
         3 => "com_not_bit",
+        4 => "com_and_bit",
+        5 => "com_and_3_bit",
         6 => "com_nand_bit",
+        7 => "com_or_bit",
+        8 => "com_or_3_bit",
+        9 => "com_nor_bit",
+        10 => "com_xor_bit",
+        11 => "com_xnor_bit",
+        16 => "com_maker_bit_8",
+        17 => "com_splitter_bit_8",
+        18 => "com_not_word",
+        19 => "com_or_word",
+        20 => "com_and_word",
+        21 => "com_nand_word",
+        22 => "com_xor_word",
+        23 => "com_nor_word",
+        24 => "com_xnor_word",
+        29 => "com_neg",
         60 => "com_level_input_1_pin",
         61 => "com_level_input_word",
         63 => "com_level_input_2_pin",
@@ -81,32 +115,143 @@ fn is_level_output(kind: u16) -> bool {
     matches!(kind, 40 | 58 | 68 | 69 | 70 | 73 | 74 | 75 | 77)
 }
 
-/// Per-cycle simulation expression for a combinational gate, given the vid
-/// slots of its input pins' drivers (in input-pin order). `None` input = the
-/// pin is undriven → constant 0 (`U1 0x0`), matching the game's convention.
-fn gate_expr(kind: u16, inputs: &[Option<usize>]) -> Result<String, String> {
-    let ref_of = |src: &Option<usize>| match src {
-        Some(slot) => format!("(U1 vid{slot})"),
-        None => "(U1 0x0)".to_string(),
+/// Per-cycle simulation expressions for a combinational component, given the
+/// vid slots of its input pins' drivers (in input-pin order, each with its bit
+/// width) and the component's result width. Returns one expression per output
+/// pin (most gates have one; a splitter has one per output bit). `None` input
+/// = undriven → constant 0, matching the game's convention.
+///
+/// DSL operator forms were extracted from the game's own generated DSL in
+/// `replay.nim` (e.g. AND = `(U1 a) & (U1 b)`, NOT = `U1 ~(U1 a)`, splitter =
+/// `(input >> i) & 1`, maker = `U8 (b0 | b1<<1 | ...)`).
+fn component_exprs(
+    kind: u16,
+    inputs: &[(Option<usize>, i64)],
+    output_count: usize,
+    width: i64,
+) -> Result<Vec<String>, String> {
+    let t = format!("U{width}");
+    let ref_of = |src: &(Option<usize>, i64)| match src.0 {
+        Some(slot) => format!("(U{} vid{slot})", src.1),
+        None => format!("(U{} 0x0)", src.1),
     };
+    let n = |expected: usize| {
+        if inputs.len() != expected {
+            return Err(format!(
+                "KIND_{kind}_EXPECTS_{expected}_INPUTS|got={}",
+                inputs.len()
+            ));
+        }
+        Ok(())
+    };
+
+    // Splitter: one word input → N bit outputs (bit i = (in >> i) & 1).
+    if kind == 17 {
+        n(1)?;
+        let inn = ref_of(&inputs[0]);
+        let mut out = Vec::with_capacity(output_count);
+        for i in 0..output_count {
+            if i == 0 {
+                out.push(format!("U1 ({inn} & 1)"));
+            } else {
+                out.push(format!("U1 ({inn} >> {i} & 1)"));
+            }
+        }
+        return Ok(out);
+    }
+    // Maker: N bit inputs → one word output (b0 | b1<<1 | b2<<2 | ...). Each
+    // bit must be widened to `t` BEFORE shifting, else a U1 shift overflows.
+    if kind == 16 {
+        let terms: Vec<String> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, src)| format!("(({t} {}) << {i})", ref_of(src)))
+            .collect();
+        return Ok(vec![format!("{t} ({})", terms.join(" | "))]);
+    }
+
     let expr = match kind {
         3 => {
-            // com_not_bit: one input, inverted.
-            if inputs.len() != 1 {
-                return Err(format!("NOT_EXPECTS_1_INPUT|got={}", inputs.len()));
-            }
-            format!("U1 (U1 ~{})", ref_of(&inputs[0]))
+            n(1)?;
+            format!("{t} ({t} ~{})", ref_of(&inputs[0]))
+        }
+        4 => {
+            n(2)?;
+            format!("{t} {} & {}", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        5 => {
+            n(3)?;
+            format!(
+                "{t} {} & {} & {}",
+                ref_of(&inputs[0]),
+                ref_of(&inputs[1]),
+                ref_of(&inputs[2])
+            )
         }
         6 => {
-            // com_nand_bit: two inputs, AND then invert.
-            if inputs.len() != 2 {
-                return Err(format!("NAND_EXPECTS_2_INPUTS|got={}", inputs.len()));
-            }
-            format!("U1 (U1 ~({} & {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+            n(2)?;
+            format!("{t} ({t} ~({} & {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        7 => {
+            n(2)?;
+            format!("{t} {} | {}", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        8 => {
+            n(3)?;
+            format!(
+                "{t} {} | {} | {}",
+                ref_of(&inputs[0]),
+                ref_of(&inputs[1]),
+                ref_of(&inputs[2])
+            )
+        }
+        9 => {
+            n(2)?;
+            format!("{t} ({t} ~({} | {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        10 => {
+            n(2)?;
+            format!("{t} {} ^ {}", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        11 => {
+            n(2)?;
+            format!("{t} ({t} ~({} ^ {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        18 => {
+            n(1)?;
+            format!("{t} ({t} ~{})", ref_of(&inputs[0]))
+        }
+        19 => {
+            n(2)?;
+            format!("{t} {} | {}", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        20 => {
+            n(2)?;
+            format!("{t} {} & {}", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        21 => {
+            n(2)?;
+            format!("{t} ({t} ~({} & {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        22 => {
+            n(2)?;
+            format!("{t} {} ^ {}", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        23 => {
+            n(2)?;
+            format!("{t} ({t} ~({} | {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        24 => {
+            n(2)?;
+            format!("{t} ({t} ~({} ^ {}))", ref_of(&inputs[0]), ref_of(&inputs[1]))
+        }
+        29 => {
+            n(1)?;
+            format!("{t} (-{})", ref_of(&inputs[0]))
         }
         other => return Err(format!("UNSUPPORTED_GATE_KIND|{other}")),
     };
-    Ok(expr)
+    Ok(vec![expr; output_count.max(1)])
 }
 
 // ─── Circuit-sim emission ──────────────────────────────────────────────────
@@ -148,9 +293,31 @@ fn emit_circuit_sim(
     let components = &circuit.components;
     let mut out_slot: HashMap<(usize, String), usize> = HashMap::new();
     let mut next_slot = 0usize;
-    let mut in_fields = tpl.input_fields.iter();
-    let mut out_fields = tpl.output_fields.iter();
     let mut lines: Vec<String> = Vec::new();
+
+    // Field ↔ component assignment follows the CIRCUIT's Vec order (the order
+    // test.si's fields correspond to), NOT topological order — a topo sort can
+    // reorder outputs (e.g. bit_adder's Sum/Carry) and would misassign them.
+    let mut in_fields: HashMap<usize, (String, String)> = HashMap::new();
+    {
+        let mut fields = tpl.input_fields.iter();
+        for (idx, comp) in components.iter().enumerate() {
+            if is_level_input(comp.kind) {
+                let f = fields.next().ok_or("MISSING_INPUT_FIELD")?.clone();
+                in_fields.insert(idx, f);
+            }
+        }
+    }
+    let mut out_fields: HashMap<usize, (String, String)> = HashMap::new();
+    {
+        let mut fields = tpl.output_fields.iter();
+        for (idx, comp) in components.iter().enumerate() {
+            if is_level_output(comp.kind) {
+                let f = fields.next().ok_or("MISSING_OUTPUT_FIELD")?.clone();
+                out_fields.insert(idx, f);
+            }
+        }
+    }
 
     let comment = |ci: usize, comp: &Component| -> String {
         let name = kind_to_name(comp.kind).unwrap_or("com_unknown");
@@ -172,7 +339,7 @@ fn emit_circuit_sim(
             // field; an N-pin component reads the packed field's bits (pin i →
             // bit i, LSB first — verified empirically for and_gate).
             let (fname, ftype) = in_fields
-                .next()
+                .get(&ci)
                 .ok_or("MISSING_INPUT_FIELD")?
                 .clone();
             let out_pins: Vec<_> = pins
@@ -200,7 +367,7 @@ fn emit_circuit_sim(
             // driver. Undriven → constant 0 (broken circuit; check_output's
             // comparison fails against a high expected). `ftype` prefixes it.
             let (fname, ftype) = out_fields
-                .next()
+                .get(&ci)
                 .ok_or("MISSING_OUTPUT_FIELD")?
                 .clone();
             let in_pin = pins.iter().find(|p| p.direction == PinDir::Input);
@@ -213,18 +380,30 @@ fn emit_circuit_sim(
             lines.push(cmt);
             lines.push(format!(".level_output.{fname} = {ftype} {src}"));
         } else {
-            let inputs: Vec<InputSrc> = pins
+            let inputs: Vec<(InputSrc, i64)> = pins
                 .iter()
                 .filter(|p| p.direction == PinDir::Input)
-                .map(|p| driver_slot(p, &net_by_pos, &conn.networks, &out_slot))
+                .map(|p| {
+                    (
+                        driver_slot(p, &net_by_pos, &conn.networks, &out_slot),
+                        p.width,
+                    )
+                })
                 .collect();
-            let expr = gate_expr(comp.kind, &inputs)?;
+            let out_pins: Vec<_> = pins
+                .iter()
+                .filter(|p| p.direction != PinDir::Input)
+                .collect();
+            // Result width comes from the output pins (a maker_bit_8 has
+            // word_size=1 but an 8-bit output), not the component's word_size.
+            let out_width = out_pins.first().map(|p| p.width).unwrap_or(comp.word_size);
+            let exprs = component_exprs(comp.kind, &inputs, out_pins.len(), out_width)?;
             lines.push(cmt);
-            for p in pins.iter().filter(|p| p.direction != PinDir::Input) {
+            for (i, p) in out_pins.iter().enumerate() {
                 let slot = next_slot;
                 next_slot += 1;
                 out_slot.insert((ci, p.name.clone()), slot);
-                lines.push(format!("var vid{slot} = {expr}"));
+                lines.push(format!("var vid{slot} = {}", exprs[i]));
             }
         }
     }
@@ -363,14 +542,10 @@ def mode_refresh() {
     // Stub: check_output consumes .level_output (set in mode_run) directly;
     // #SIMULATION_STATE writes only feed the game's UI display, not the test result.
 }
-def set_error(input: String) {
-    let len = input.len()
-    store(.error_buffer, U16 len)
-    var i = 0
-    while i < len {
-        store(.error_buffer + i + 2, U8 input[i])
-        i += 1
-    }
+def set_error(input: @Type) {
+    // No-op: error messages only feed the game's UI display, never the test
+    // result. @Type accepts both the i18n tuple `(id, text)` (used by test.si
+    // check_outputs) and a plain String.
 }
 def reset_sim() {
     .time_component_last = U64 0
@@ -566,9 +741,40 @@ fn gate_components(circuit: &Circuit) -> usize {
 }
 
 /// Generate a full current-dialect DSL for `circuit` under `tpl`.
+/// Output field bit-width comes from the circuit's level-output component, not
+/// from test.si (test.si's field type is best-effort: the `#CORRECT_OUTPUT`
+/// element type, else U1). kind 68 (1-pin) is always U1; kind 69 (word) is
+/// `U{word_size}`. Overrides the template's types and rebuilds the struct.
+fn correct_output_types(mut tpl: LevelTemplate, circuit: &Circuit) -> Result<LevelTemplate, String> {
+    let output_comps: Vec<&Component> = circuit
+        .components
+        .iter()
+        .filter(|c| is_level_output(c.kind))
+        .collect();
+    if output_comps.len() != tpl.output_fields.len() {
+        return Err(format!(
+            "OUTPUT_FIELD_COUNT_MISMATCH|circuit={} tpl={}",
+            output_comps.len(),
+            tpl.output_fields.len()
+        ));
+    }
+    for (comp, field) in output_comps.iter().zip(tpl.output_fields.iter_mut()) {
+        let t = if comp.kind == 68 {
+            "U1".to_string()
+        } else {
+            format!("U{}", comp.word_size.max(1))
+        };
+        field.1 = t;
+    }
+    let z = tpl.output_z_fields.clone();
+    tpl.output_struct = crate::dll::test_si::build_output_struct(&tpl.output_fields, &z);
+    Ok(tpl)
+}
+
 pub fn generate(circuit: &Circuit, tpl: &LevelTemplate) -> Result<String, String> {
+    let tpl = correct_output_types(tpl.clone(), circuit)?;
     let conn = pins::resolve(circuit)?;
-    let sim = emit_circuit_sim(circuit, &conn, tpl)?;
+    let sim = emit_circuit_sim(circuit, &conn, &tpl)?;
     let counts = counts_array(circuit)?;
     let gates = gate_components(circuit);
 

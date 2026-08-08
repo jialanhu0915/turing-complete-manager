@@ -36,6 +36,11 @@ pub fn parse(content: &str, level_id: &str) -> Result<LevelTemplate, String> {
         return Err(format!("EMPTY_TEST_SI|{level_id}"));
     }
 
+    // The game's own generated DSL drops the i18n `(31337_<id>, text)` wrapper
+    // (it keeps just the fallback text — see replay.nim block 2), and compile.dll
+    // cannot parse the tuple literal. Strip it to the plain text.
+    let compact = strip_localized_tuples(&compact);
+
     // Reject the switched (architecture) harness.
     if !compact.contains("def get_input(cycle") {
         return Err(format!("UNSUPPORTED_HARNESS|{level_id}"));
@@ -124,6 +129,79 @@ fn matching_brace(s: &str, open: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Index of the `)` matching the `(` at `open`.
+fn matching_paren(s: &str, open: usize) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < b.len() {
+        match b[i] {
+            b'"' | b'`' => i = skip_string(b, i),
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(i);
+                }
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Index of the first top-level `,` (outside strings and nested delimiters).
+fn top_level_comma(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut depth = 0i32;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'"' | b'`' => i = skip_string(b, i),
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' | b']' | b'}' => {
+                depth -= 1;
+                i += 1;
+            }
+            b',' if depth <= 0 => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Replace i18n tuples `(31337_<id>, <text>)` with just `<text>`, matching the
+/// game's codegen (the DSL cannot parse the tuple literal).
+fn strip_localized_tuples(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i] == b'(' && s[i + 1..].starts_with("31337_") {
+            if let Some(close) = matching_paren(s, i) {
+                let inner = &s[i + 1..close];
+                if let Some(comma) = top_level_comma(inner) {
+                    let text = inner[comma + 1..].trim();
+                    out.extend_from_slice(text.as_bytes());
+                }
+                i = close + 1;
+                continue;
+            }
+        }
+        let ch = s[i..].chars().next().unwrap();
+        out.extend_from_slice(ch.to_string().as_bytes());
+        i += ch.len_utf8();
+    }
+    String::from_utf8(out).unwrap()
 }
 
 fn brace_delta(s: &str) -> i32 {
@@ -271,7 +349,7 @@ fn parse_field(field: &str) -> Option<(String, String)> {
     Some((name.to_string(), ty.to_string()))
 }
 
-fn build_struct(name: &str, fields: &[(String, String)]) -> String {
+pub(crate) fn build_struct(name: &str, fields: &[(String, String)]) -> String {
     if fields.is_empty() {
         format!("type {name} {{\n}}")
     } else {
@@ -333,7 +411,7 @@ fn derive_output_fields(
     (fields, z_names)
 }
 
-fn build_output_struct(fields: &[(String, String)], z_fields: &[String]) -> String {
+pub(crate) fn build_output_struct(fields: &[(String, String)], z_fields: &[String]) -> String {
     let mut all: Vec<(String, String)> = fields.to_vec();
     all.extend(z_fields.iter().map(|z| (z.clone(), "Bool".to_string())));
     build_struct("Output", &all)
