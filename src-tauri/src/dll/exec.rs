@@ -91,17 +91,26 @@ pub struct RunOutcome {
     pub cycles_run: i64,
 }
 
-/// The fixed-address sim arena handed to the compiled circuit.
-struct Arena {
+/// The sim arena handed to the compiled circuit. Its layout is RELATIVE to
+/// `base` (commands at base+0, settings at base+0x10, ...) — the DSL preamble's
+/// nine pointer vars are injected with `base + <offset>`, mirroring how the
+/// game's `generate_source` inlines `$simulation_commands` etc.
+pub struct Arena {
     base: *mut u8,
 }
 
 impl Arena {
-    /// Map the arena at exactly `ARENA_BASE`, covering all preamble regions.
+    /// Map the arena at exactly `ARENA_BASE` (the fixed 0x1000000 convention
+    /// used by the extracted DSL's preamble).
     fn alloc() -> Result<Self, String> {
+        Self::alloc_at(ARENA_BASE)
+    }
+
+    /// Map the arena at a caller-chosen fixed address.
+    fn alloc_at(addr: usize) -> Result<Self, String> {
         let p = unsafe {
             VirtualAlloc(
-                ARENA_BASE as *mut u8,
+                addr as *mut u8,
                 ARENA_SIZE,
                 MEM_COMMIT | MEM_RESERVE,
                 PAGE_READWRITE,
@@ -109,18 +118,45 @@ impl Arena {
         };
         if p.is_null() {
             return Err(format!(
-                "VirtualAlloc arena@0x{ARENA_BASE:x} failed (err={})",
+                "VirtualAlloc arena@0x{addr:x} failed (err={})",
                 unsafe { GetLastError() }
             ));
         }
-        if (p as usize) != ARENA_BASE {
+        if (p as usize) != addr {
             unsafe { VirtualFree(p, 0, MEM_RELEASE) };
             return Err(format!(
-                "arena mapped at 0x{:x}, expected 0x{ARENA_BASE:x}",
+                "arena mapped at 0x{:x}, expected 0x{addr:x}",
                 p as usize
             ));
         }
         Ok(Arena { base: p })
+    }
+
+    /// Map the arena at ANY address. The base must then be injected into the
+    /// DSL preamble before compiling (see `inject_preamble_addresses`) — this
+    /// avoids the fragile fixed 0x1000000 base and matches the game's own
+    /// runtime-pointer inlining.
+    pub fn alloc_any() -> Result<Self, String> {
+        let p = unsafe {
+            VirtualAlloc(
+                std::ptr::null_mut(),
+                ARENA_SIZE,
+                MEM_COMMIT | MEM_RESERVE,
+                PAGE_READWRITE,
+            )
+        };
+        if p.is_null() {
+            return Err(format!(
+                "VirtualAlloc arena (any) failed (err={})",
+                unsafe { GetLastError() }
+            ));
+        }
+        Ok(Arena { base: p })
+    }
+
+    /// Absolute base address of the arena.
+    pub fn base(&self) -> usize {
+        self.base as usize
     }
 
     #[inline]
@@ -130,7 +166,7 @@ impl Arena {
 
     #[inline]
     fn settings(&self) -> *mut u64 {
-        // DSL preamble: `var settings = Ptr 0x1000010`.
+        // DSL preamble: `var settings = Ptr <base + 0x10>`.
         unsafe { self.base.add(0x10) as *mut u64 }
     }
 
@@ -149,6 +185,27 @@ impl Drop for Arena {
     fn drop(&mut self) {
         unsafe { VirtualFree(self.base as *mut u8, 0, MEM_RELEASE) };
     }
+}
+
+/// Rewrite the DSL preamble's nine fixed arena addresses (0x1000000..0x1000080)
+/// to be relative to `base`, mirroring how the game's `generate_source` inlines
+/// the runtime `$simulation_commands` etc. pointers. The layout offsets are the
+/// fixed DSL preamble spacing (0x10 apart), so `base + offset` reproduces it.
+///
+/// ```text
+/// var commands        = Ptr 0x1000000  →  var commands        = Ptr <base>
+/// var settings        = Ptr 0x1000010  →  var settings        = Ptr <base+0x10>
+/// ...                                  →  ...
+/// ```
+pub fn inject_preamble_addresses(dsl: &str, base: usize) -> String {
+    let offsets = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+    let mut out = dsl.to_string();
+    for off in offsets {
+        let fixed = format!("0x{:x}", ARENA_BASE + off);
+        let injected = format!("0x{:x}", base + off);
+        out = out.replace(&fixed, &injected);
+    }
+    out
 }
 
 /// Executable copy of the compiled machine code.
@@ -201,7 +258,8 @@ impl Drop for ExecCode {
     }
 }
 
-/// Run the compiled circuit for one test and return `settings[sim_test_result]`.
+/// Run the compiled circuit for one test in the fixed 0x1000000 arena
+/// (the extracted DSL's convention).
 ///
 /// `code` = raw machine-code bytes (CompileOutput field_1 + 8, len = field_0);
 /// `entry_offset` = CompileOutput field_2.
@@ -212,6 +270,18 @@ pub fn run_test(
     target_cycle: u64,
 ) -> Result<RunOutcome, String> {
     let arena = Arena::alloc()?;
+    run_in_arena(&arena, code, entry_offset, test_number, target_cycle)
+}
+
+/// Run the compiled circuit for one test inside a caller-provided arena
+/// (`inject_preamble_addresses` must have rewritten the DSL to match its base).
+pub fn run_in_arena(
+    arena: &Arena,
+    code: &[u8],
+    entry_offset: usize,
+    test_number: u64,
+    target_cycle: u64,
+) -> Result<RunOutcome, String> {
     let exec = ExecCode::alloc(code)?;
 
     let cmds = arena.commands();
@@ -375,6 +445,55 @@ mod tests {
             outcome.cycles_run < target_cycle as i64,
             "a failed run must halt before target (cycles_run={})",
             outcome.cycles_run
+        );
+    }
+
+    /// Verify option B: arena at ANY address, with its base injected into the
+    /// DSL preamble before compiling (mirrors the game's `$simulation_*`
+    /// inlining). Must behave identically to the fixed 0x1000000 run.
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_with_injected_arena_addresses() {
+        let shim: &Shim = shim().expect("shim load");
+        let dsl_orig = std::fs::read_to_string("../sim-shim/and_gate_current.dsl")
+            .expect("read and_gate_current.dsl");
+
+        // Allocate the arena at ANY address, then rewrite the DSL preamble to
+        // point at it (like the game inlines $simulation_commands).
+        let arena = Arena::alloc_any().expect("arena alloc_any");
+        eprintln!("arena base = 0x{:x}", arena.base());
+        let dsl = inject_preamble_addresses(&dsl_orig, arena.base());
+        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let _status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+        assert_eq!(
+            out.field_3, 0,
+            "compile must succeed with injected addresses, got {out:?}"
+        );
+
+        let code = machine_code(&out);
+        let entry_offset = out.field_2 as usize;
+        eprintln!("code={} bytes, entry_offset={entry_offset}", code.len());
+
+        let outcome = run_in_arena(&arena, code, entry_offset, 0, 3)
+            .expect("run_in_arena must complete");
+        eprintln!(
+            "outcome: test_result={} (pass=0/win=1/fail=2) cycles_run={}",
+            outcome.test_result, outcome.cycles_run
+        );
+
+        // Same result as the fixed-address run: the hardcoded-0 circuit fails.
+        assert_eq!(
+            outcome.test_result, TR_FAIL,
+            "injected-address run must fail like the fixed-address run"
         );
     }
 }
