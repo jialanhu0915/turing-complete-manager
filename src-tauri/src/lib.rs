@@ -9,6 +9,7 @@ mod backup;
 mod circuit;
 mod config;
 mod dll;
+mod game;
 mod levels;
 mod translations;
 
@@ -84,6 +85,13 @@ fn delete_backup(name: String) -> Result<(), String> {
 #[tauri::command]
 fn is_game_running() -> bool {
     is_game_running_inner()
+}
+
+/// `true` iff Turing Complete is installed and complete (has `compile.dll` +
+/// `campaign/`). Gates the validation UI.
+#[tauri::command]
+fn is_game_available() -> bool {
+    game::is_available()
 }
 
 #[tauri::command]
@@ -204,6 +212,7 @@ pub fn run() {
             restore_backup,
             delete_backup,
             is_game_running,
+    is_game_available,
             list_levels,
             save_levels,
             list_level_names,
