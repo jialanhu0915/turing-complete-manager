@@ -496,4 +496,108 @@ mod tests {
             "injected-address run must fail like the fixed-address run"
         );
     }
+
+    /// Phase 1 spike: the hand-written and_gate DSL (`and_gate_gen.dsl`,
+    /// generated from the player's circuit.data) must compile + run to PASS.
+    ///
+    /// The circuit is `Input{a,b} -> nand -> not -> Output`; `get_input` cycles
+    /// the full 2-bit truth table (a=tick&1, b=(tick>>1)&1), so `target_cycle=4`
+    /// covers 00, 10, 01, 11. This proves the template+emission approach works
+    /// before building the Rust generator.
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_hand_generated_and_gate_dsl() {
+        let shim: &Shim = shim().expect("shim load");
+        let dsl_orig = std::fs::read_to_string("../sim-shim/and_gate_gen.dsl")
+            .expect("read and_gate_gen.dsl");
+        assert!(
+            !dsl_orig.contains("\n\n"),
+            "generated DSL must not contain blank lines (dialect restriction)"
+        );
+
+        let arena = Arena::alloc_any().expect("arena alloc_any");
+        eprintln!("arena base = 0x{:x}", arena.base());
+        let dsl = inject_preamble_addresses(&dsl_orig, arena.base());
+        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let _status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+        assert_eq!(out.field_3, 0, "compile must succeed, got {out:?}");
+
+        let code = machine_code(&out);
+        let entry_offset = out.field_2 as usize;
+        eprintln!("code={} bytes, entry_offset={entry_offset}", code.len());
+
+        // Full 2-bit truth table: ticks 0..3 → (0,0),(1,0),(0,1),(1,1).
+        let outcome = run_in_arena(&arena, code, entry_offset, 0, 4)
+            .expect("run_in_arena must complete");
+        eprintln!(
+            "outcome: test_result={} (pass=0/win=1/fail=2) cycles_run={}",
+            outcome.test_result, outcome.cycles_run
+        );
+        assert_eq!(
+            outcome.test_result, TR_PASS,
+            "correct nand+not circuit must pass all 4 truth-table rows"
+        );
+        assert_eq!(
+            outcome.cycles_run, 4,
+            "a passing run must complete all target cycles (cycles_run={})",
+            outcome.cycles_run
+        );
+    }
+
+    /// Negative counterpart: dropping the trailing NOT turns the circuit into
+    /// NAND(A,B) — wrong for the and_gate level — so the truth table must FAIL.
+    /// Proves the harness can tell a correct circuit from a broken one.
+    #[test]
+    #[ignore = "stateful: calls compile.dll::compile + executes JIT code (single-use, needs game + shim); run via --ignored"]
+    fn run_broken_and_gate_dsl_fails() {
+        let shim: &Shim = shim().expect("shim load");
+        let dsl_orig = std::fs::read_to_string("../sim-shim/and_gate_gen.dsl")
+            .expect("read and_gate_gen.dsl");
+        // Break the circuit: NOT dropped → output = NAND(A,B), not AND.
+        let broken = dsl_orig.replace(
+            "var vid_y = U1 (U1 ~(U1 vid_n))",
+            "var vid_y = U1 vid_n",
+        );
+        assert!(
+            broken.contains("var vid_y = U1 vid_n"),
+            "replacement must land"
+        );
+
+        let arena = Arena::alloc_any().expect("arena alloc_any");
+        let dsl = inject_preamble_addresses(&broken, arena.base());
+        let src = std::ffi::CString::new(dsl).expect("dsl has no NUL bytes");
+
+        let mut out = CompileOutput::zeroed();
+        let _status = unsafe {
+            shim.compile(
+                &mut out as *mut CompileOutput as *mut u8,
+                src.as_ptr(),
+                0,
+                267,
+            )
+        };
+        assert_eq!(out.field_3, 0, "compile must succeed, got {out:?}");
+
+        let code = machine_code(&out);
+        let entry_offset = out.field_2 as usize;
+        let outcome = run_in_arena(&arena, code, entry_offset, 0, 4)
+            .expect("run_in_arena must complete");
+        eprintln!(
+            "broken outcome: test_result={} cycles_run={}",
+            outcome.test_result, outcome.cycles_run
+        );
+        assert_eq!(
+            outcome.test_result, TR_FAIL,
+            "NAND-only circuit must fail the and_gate truth table"
+        );
+    }
 }
