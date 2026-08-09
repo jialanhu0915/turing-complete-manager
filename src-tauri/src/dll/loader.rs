@@ -129,6 +129,7 @@ impl Shim {
 /// Path to `sim-shim.dll`. Search order:
 /// 1. `<CARGO_MANIFEST_DIR>/../sim-shim/shim.dll` (dev tree)
 /// 2. `sim-shim/shim.dll` relative to CWD (when running tests)
+/// 3. `<exe_dir>/shim.dll` (installed MSI bundles shim.dll next to verify.exe)
 fn shim_dll_path() -> std::path::PathBuf {
     // 1. dev tree (src-tauri/../sim-shim/shim.dll)
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -139,6 +140,20 @@ fn shim_dll_path() -> std::path::PathBuf {
 
     // 2. cwd-relative (cargo test runs from src-tauri/)
     let cwd_path = Path::new("sim-shim").join("shim.dll");
+    if cwd_path.exists() {
+        return cwd_path;
+    }
+
+    // 3. installed layout (verify.exe / tauri exe sit in INSTALLDIR with shim.dll)
+    if let Ok(exe) = std::env::current_exe() {
+        let installed = exe.with_file_name("shim.dll");
+        if installed.exists() {
+            return installed;
+        }
+    }
+
+    // Fall back to the cwd-relative path even if it doesn't exist, so the
+    // error message names the place we tried.
     cwd_path
 }
 

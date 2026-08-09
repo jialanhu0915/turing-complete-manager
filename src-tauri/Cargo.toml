@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Save manager for Turing Complete"
 authors = ["you"]
 edition = "2021"
+default-run = "turing-complete-manager"
 
 [lib]
 name = "turing_complete_manager_lib"

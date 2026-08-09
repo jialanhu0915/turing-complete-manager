@@ -538,7 +538,7 @@ async function refreshVerifySchemes(): Promise<void> {
         <td>${escapeHtml(scheme)}</td>
         <td class="verify-result">${prev ? escapeHtml(prev.text) : ""}</td>
         <td class="row-actions">
-          <button type="button" class="action-verify" data-scheme="${escapeAttr(scheme)}">${escapeHtml(t("VERIFY_RUNNING"))}</button>
+          <button type="button" class="action-verify" data-scheme="${escapeAttr(scheme)}">${escapeHtml(t("VERIFY_RUN"))}</button>
         </td>`;
       tbody.appendChild(tr);
     }
