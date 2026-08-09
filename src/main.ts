@@ -9,6 +9,7 @@ import {
   tErr,
   type Locale,
 } from "./i18n";
+import { bindCharacterEvents, refreshCharacters } from "./character";
 
 interface AppConfig {
   save_dir: string;
@@ -77,6 +78,7 @@ function rerenderDynamic(): void {
   refreshBackupList();
   renderLevelRows();
   updateLevelPendingUI();
+  refreshCharacters().catch((e) => console.error("refreshCharacters failed:", e));
 }
 
 async function init(): Promise<void> {
@@ -523,5 +525,6 @@ window.addEventListener("DOMContentLoaded", () => {
   listen("auto-backup-done", () => {
     refreshBackupList();
   }).catch((e) => console.error("listen failed:", e));
+  bindCharacterEvents();
   init().catch((e) => alert(t("INIT_FAILED", { err: tErr(String(e)) })));
 });

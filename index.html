@@ -145,7 +145,85 @@
             </tbody>
           </table>
         </details>
+
+        <details class="config-section" id="character-section" open>
+          <summary data-i18n="CHARACTER_TITLE">角色替换（mentor 对话人物）</summary>
+          <p class="hint" data-i18n="CHARACTER_HINT">把游戏的 mentor 对话人物换成你喜欢的图片。游戏本体原图首次使用时自动备份。</p>
+          <div id="character-warn" class="hint warn" hidden></div>
+          <div id="character-status" class="hint inline" data-i18n="CHARACTER_STATUS_LOADING">加载中…</div>
+          <div class="action-row">
+            <button type="button" id="character-create" data-i18n="CHARACTER_NEW">新建我的角色</button>
+            <button type="button" id="character-restore-default" data-i18n="CHARACTER_RESTORE">恢复游戏原图</button>
+          </div>
+          <h3 class="sub-config-title" data-i18n="CHARACTER_DEFAULT_GROUP">预装角色</h3>
+          <div class="character-grid" id="character-defaults">
+            <div class="character-empty" data-i18n="CHARACTER_DEFAULT_EMPTY">暂无预装角色。</div>
+          </div>
+          <h3 class="sub-config-title" data-i18n="CHARACTER_CUSTOM_GROUP">我的角色</h3>
+          <table class="backup-list">
+            <thead>
+              <tr>
+                <th data-i18n="CHARACTER_SLOT_NEUTRAL">中性</th>
+                <th data-i18n="CHARACTER_SLOT_SMILE">微笑</th>
+                <th>名称</th>
+                <th data-i18n="HEADER_ACTIONS">操作</th>
+              </tr>
+            </thead>
+            <tbody id="character-customs">
+              <tr><td colspan="4" class="empty" data-i18n="CHARACTER_EMPTY">暂无角色。</td></tr>
+            </tbody>
+          </table>
+        </details>
       </section>
     </main>
+
+    <!-- 角色替换 - 弹窗 -->
+    <dialog id="dialog-character-create" class="app-dialog">
+      <form method="dialog" class="app-dialog-form">
+        <h3 data-i18n="CHARACTER_NEW_TITLE">新建角色</h3>
+        <input type="text" id="character-name-input" data-i18n-placeholder="CHARACTER_NAME_PLACEHOLDER" placeholder="角色名称" required />
+        <div class="app-dialog-actions">
+          <button value="cancel" formnovalidate data-i18n="COMMON_CANCEL">取消</button>
+          <button value="confirm" id="character-create-confirm" class="primary" data-i18n="CHARACTER_CONFIRM_NEW">创建</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="dialog-character-matting" class="app-dialog matting-dialog">
+      <h3 data-i18n="CHARACTER_MATTING_TITLE">上传图片并抠图</h3>
+      <p class="hint" data-i18n="CHARACTER_MATTING_HINT">选择背景色 + 调节容差滑块，预览抠图效果。</p>
+      <div class="matting-toolbar">
+        <button type="button" id="matting-pick-file" data-i18n="CHARACTER_UPLOAD_IMAGE">选择 PNG…</button>
+        <input type="file" id="matting-file-input" accept="image/png" hidden />
+        <label class="matting-color">
+          <span data-i18n="CHARACTER_BG_COLOR">背景色</span>
+          <input type="color" id="matting-bg" value="#ffffff" />
+        </label>
+        <label class="matting-threshold">
+          <span data-i18n="CHARACTER_THRESHOLD">容差</span>
+          <input type="range" id="matting-threshold" min="0" max="200" value="30" />
+          <span id="matting-threshold-val">30</span>
+        </label>
+      </div>
+      <div class="matting-canvas-wrap">
+        <canvas id="matting-canvas"></canvas>
+        <p id="matting-empty" class="matting-empty" data-i18n="CHARACTER_UPLOAD_IMAGE">选择 PNG…</p>
+      </div>
+      <div class="app-dialog-actions">
+        <button type="button" id="matting-cancel" data-i18n="COMMON_CANCEL">取消</button>
+        <button type="button" id="matting-apply" class="primary" disabled data-i18n="CHARACTER_BG_APPLY">保存抠图结果</button>
+      </div>
+    </dialog>
+
+    <dialog id="dialog-character-duplicate" class="app-dialog">
+      <form method="dialog" class="app-dialog-form">
+        <h3 data-i18n="CHARACTER_DUPLICATE">复制为我的</h3>
+        <input type="text" id="character-duplicate-name" data-i18n-placeholder="CHARACTER_NAME_PLACEHOLDER" placeholder="角色名称" required />
+        <div class="app-dialog-actions">
+          <button value="cancel" formnovalidate data-i18n="COMMON_CANCEL">取消</button>
+          <button value="confirm" id="character-duplicate-confirm" class="primary" data-i18n="CHARACTER_CONFIRM_NEW">创建</button>
+        </div>
+      </form>
+    </dialog>
   </body>
 </html>
