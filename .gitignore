@@ -30,3 +30,7 @@ dist-ssr
 # Rust build artifacts and Tauri-generated bindings
 /src-tauri/target/
 /src-tauri/gen/
+
+# Verify CLI spike outputs (hand-built shim.dll + JIT code dumps from
+# DLL/JIT experimentation on test/verify-cli; rebuilt ad-hoc per spike)
+/sim-shim/
