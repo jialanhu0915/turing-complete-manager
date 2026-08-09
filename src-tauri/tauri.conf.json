@@ -22,7 +22,15 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**/default_characters/**",
+          "**/characters/**",
+          "**/originals/**"
+        ]
+      }
     }
   },
   "bundle": {
