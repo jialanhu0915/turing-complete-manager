@@ -112,7 +112,11 @@ async function showMain(): Promise<void> {
   $("#current-language").textContent = cfg!.language;
   $<HTMLSelectElement>("#lang-select").value = cfg!.language;
   fillAutoBackupForm();
-  await Promise.all([refreshGameStatus(), refreshBackupList()]);
+  await Promise.all([
+    refreshGameStatus(),
+    refreshBackupList(),
+    refreshCharacters().catch((e) => console.error("refreshCharacters failed:", e)),
+  ]);
 }
 
 function fillAutoBackupForm(): void {
