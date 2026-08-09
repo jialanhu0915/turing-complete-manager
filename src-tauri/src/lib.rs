@@ -6,6 +6,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 mod backup;
+mod character;
 mod config;
 mod levels;
 mod translations;
@@ -103,6 +104,48 @@ fn list_level_names() -> translations::LevelNames {
     translations::load_level_names()
 }
 
+// ===== 角色替换（character.rs） =====
+
+#[tauri::command]
+fn character_status() -> character::CharacterStatus {
+    character::status_impl()
+}
+
+#[tauri::command]
+fn list_characters() -> Vec<character::Character> {
+    character::list_characters_impl()
+}
+
+#[tauri::command]
+fn create_character(name: String) -> Result<character::Character, String> {
+    character::create_character_impl(&name)
+}
+
+#[tauri::command]
+fn delete_character(id: String) -> Result<(), String> {
+    character::delete_character_impl(&id)
+}
+
+#[tauri::command]
+fn duplicate_character(id: String, new_name: String) -> Result<character::Character, String> {
+    character::duplicate_character_impl(&id, &new_name)
+}
+
+#[tauri::command]
+fn save_character_image(id: String, slot: String, png_base64: String) -> Result<(), String> {
+    character::save_character_image_impl(&id, &slot, &png_base64)
+}
+
+#[tauri::command]
+fn apply_character(id: String) -> Result<(), String> {
+    character::apply_character_impl(&id)
+}
+
+#[tauri::command]
+fn restore_default_character() -> Result<(), String> {
+    character::restore_default_impl()
+}
+
 fn is_game_running_inner() -> bool {
     #[cfg(windows)]
     {
@@ -151,6 +194,14 @@ pub fn run() {
             list_levels,
             save_levels,
             list_level_names,
+            character_status,
+            list_characters,
+            create_character,
+            delete_character,
+            duplicate_character,
+            save_character_image,
+            apply_character,
+            restore_default_character,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
