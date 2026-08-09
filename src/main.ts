@@ -47,6 +47,21 @@ interface LevelName {
 let cfg: AppConfig | null = null;
 let currentStep = 1;
 
+type ViewName = "backup" | "character" | "levels" | "config";
+
+/** 切换主页面内的 view（侧栏点击触发）。隐藏非激活 view + 更新侧栏高亮。 */
+function switchView(name: ViewName): void {
+  document.querySelectorAll<HTMLElement>("#main .view").forEach((el) => {
+    el.hidden = el.dataset.view !== name;
+  });
+  document.querySelectorAll<HTMLButtonElement>("#main .nav-item").forEach((btn) => {
+    const isActive = btn.dataset.view === name;
+    btn.classList.toggle("active", isActive);
+    if (isActive) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+  });
+}
+
 function $<T extends HTMLElement>(sel: string): T {
   const el = document.querySelector<T>(sel);
   if (!el) throw new Error(`element not found: ${sel}`);
@@ -112,6 +127,7 @@ async function showMain(): Promise<void> {
   $("#current-language").textContent = cfg!.language;
   $<HTMLSelectElement>("#lang-select").value = cfg!.language;
   fillAutoBackupForm();
+  switchView("backup");
   await Promise.all([
     refreshGameStatus(),
     refreshBackupList(),
@@ -530,5 +546,8 @@ window.addEventListener("DOMContentLoaded", () => {
     refreshBackupList();
   }).catch((e) => console.error("listen failed:", e));
   bindCharacterEvents();
+  document.querySelectorAll<HTMLButtonElement>("#main .nav-item").forEach((btn) => {
+    btn.addEventListener("click", () => switchView(btn.dataset.view as ViewName));
+  });
   init().catch((e) => alert(t("INIT_FAILED", { err: tErr(String(e)) })));
 });

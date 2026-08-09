@@ -52,128 +52,135 @@
       </section>
 
       <section id="main" hidden>
-        <header>
+        <aside class="sidebar">
           <h1 data-i18n="APP_TITLE">Turing Complete Manager</h1>
           <p class="version">v<span id="app-version">…</span></p>
-        </header>
+          <nav class="sidebar-nav">
+            <button type="button" class="nav-item active" data-view="backup" aria-current="page" data-i18n="SIDEBAR_BACKUP">备份</button>
+            <button type="button" class="nav-item" data-view="character" data-i18n="SIDEBAR_CHARACTER">角色</button>
+            <button type="button" class="nav-item" data-view="levels" data-i18n="SIDEBAR_LEVELS">关卡</button>
+            <button type="button" class="nav-item" data-view="config" data-i18n="SIDEBAR_CONFIG">配置</button>
+          </nav>
+        </aside>
+        <div class="main-content">
+          <section class="view" data-view="backup">
+            <h2 data-i18n="BACKUP_TITLE" class="view-title">备份管理</h2>
+            <div class="backup-header">
+              <span class="game-status" id="game-status">…</span>
+            </div>
+            <div class="action-row">
+              <button type="button" id="create-backup" class="primary" data-i18n="BACKUP_NOW">立即备份</button>
+              <button type="button" id="refresh-list" data-i18n="BACKUP_REFRESH">刷新列表</button>
+            </div>
+            <table class="backup-list">
+              <thead>
+                <tr>
+                  <th data-i18n="HEADER_TIME">备份时间</th>
+                  <th data-i18n="HEADER_SIZE">大小</th>
+                  <th data-i18n="HEADER_ACTIONS">操作</th>
+                </tr>
+              </thead>
+              <tbody id="backup-rows">
+                <tr><td colspan="3" class="empty" data-i18n="BACKUP_LOADING">加载中…</td></tr>
+              </tbody>
+            </table>
+          </section>
 
-        <details class="config-section">
-          <summary data-i18n="CONFIG_TITLE">配置</summary>
-          <dl class="config-summary">
-            <dt data-i18n="CONFIG_SAVE_DIR">存档目录</dt><dd id="current-save-dir">…</dd>
-            <dt data-i18n="CONFIG_BACKUP_DIR">备份目录</dt><dd id="current-backup-dir">…</dd>
-            <dt data-i18n="CONFIG_LANGUAGE">界面语言</dt><dd id="current-language">…</dd>
-          </dl>
-          <div class="action-row" id="lang-switcher">
-            <span data-i18n="CONFIG_LANGUAGE">界面语言</span>
-            <select id="lang-select">
-              <option value="zh-CN" data-i18n="CONFIG_LANG_ZH">简体中文</option>
-              <option value="en-US" data-i18n="CONFIG_LANG_EN">English</option>
-            </select>
-          </div>
-          <button type="button" id="reset-config" data-i18n="CONFIG_RESET">重置配置</button>
+          <section class="view" data-view="character" hidden>
+            <h2 data-i18n="CHARACTER_TITLE" class="view-title">角色替换（mentor 对话人物）</h2>
+            <p class="hint" data-i18n="CHARACTER_HINT">把游戏的 mentor 对话人物换成你喜欢的图片。游戏本体原图首次使用时自动备份。</p>
+            <div id="character-warn" class="hint warn" hidden></div>
+            <div id="character-status" class="hint inline">加载中…</div>
+            <div class="action-row">
+              <button type="button" id="character-create" data-i18n="CHARACTER_NEW">新建我的角色</button>
+              <button type="button" id="character-restore-default" data-i18n="CHARACTER_RESTORE">恢复游戏原图</button>
+            </div>
+            <h3 class="sub-config-title" data-i18n="CHARACTER_DEFAULT_GROUP">预装角色</h3>
+            <div class="character-grid" id="character-defaults">
+              <div class="character-empty" data-i18n="CHARACTER_DEFAULT_EMPTY">暂无预装角色。</div>
+            </div>
+            <h3 class="sub-config-title" data-i18n="CHARACTER_CUSTOM_GROUP">我的角色</h3>
+            <table class="backup-list">
+              <thead>
+                <tr>
+                  <th data-i18n="CHARACTER_SLOT_NEUTRAL">中性</th>
+                  <th data-i18n="CHARACTER_SLOT_SMILE">微笑</th>
+                  <th>名称</th>
+                  <th data-i18n="HEADER_ACTIONS">操作</th>
+                </tr>
+              </thead>
+              <tbody id="character-customs">
+                <tr><td colspan="4" class="empty" data-i18n="CHARACTER_EMPTY">暂无角色。</td></tr>
+              </tbody>
+            </table>
+          </section>
 
-          <hr />
+          <section class="view" data-view="levels" hidden>
+            <h2 data-i18n="LEVELS_TITLE" class="view-title">关卡编辑器（levels.txt）</h2>
+            <p class="hint" data-i18n="LEVELS_HINT">切换每关的通关标志。仅修改第二列，其他字段原样保留。修改前会自动备份原文件到存档目录下的 <code>levels_backups/</code>。</p>
+            <div class="action-row">
+              <button type="button" id="levels-reload" data-i18n="LEVELS_RELOAD">重新读取</button>
+              <input type="text" id="levels-search" data-i18n-placeholder="LEVELS_SEARCH_PH" placeholder="过滤关卡 ID…" />
+              <span class="spacer"></span>
+              <span id="levels-pending" class="hint inline" data-i18n="LEVELS_NO_PENDING">无修改</span>
+              <button type="button" id="levels-discard" disabled data-i18n="LEVELS_DISCARD">放弃修改</button>
+              <button type="button" id="levels-save" class="primary" disabled data-i18n="LEVELS_SAVE">保存修改</button>
+            </div>
+            <table class="backup-list">
+              <thead>
+                <tr>
+                  <th style="width:60px" data-i18n="LEVELS_HEADER_DONE">通关</th>
+                  <th data-i18n="LEVELS_HEADER_NAME">关卡名</th>
+                  <th data-i18n="LEVELS_HEADER_SOL">方案</th>
+                  <th style="width:90px" data-i18n="LEVELS_HEADER_RECORDS">记录数</th>
+                </tr>
+              </thead>
+              <tbody id="levels-rows">
+                <tr><td colspan="4" class="empty" data-i18n="LEVELS_EMPTY">点击「重新读取」加载。</td></tr>
+              </tbody>
+            </table>
+          </section>
 
-          <h3 class="sub-config-title" data-i18n="AUTO_TITLE">自动备份</h3>
-          <p class="hint" data-i18n="AUTO_HINT">软件运行期间按间隔自动备份。游戏中也会执行（热备）。超出保留个数时最旧的备份会被自动清理。</p>
-          <div class="auto-grid">
-            <label class="auto-row">
-              <input type="checkbox" id="auto-enabled" />
-              <span data-i18n="AUTO_ENABLED">启用自动备份</span>
-            </label>
-            <label class="auto-row">
-              <span data-i18n="AUTO_INTERVAL">间隔（分钟）</span>
-              <input type="number" id="auto-interval" min="1" max="1440" />
-            </label>
-            <label class="auto-row">
-              <span data-i18n="AUTO_KEEP">保留个数</span>
-              <input type="number" id="auto-keep" min="1" max="999" />
-            </label>
-          </div>
-          <div class="action-row">
-            <button type="button" id="auto-save" class="primary" data-i18n="AUTO_SAVE">保存自动备份设置</button>
-            <span class="hint inline" id="auto-status">—</span>
-          </div>
-        </details>
+          <section class="view" data-view="config" hidden>
+            <h2 data-i18n="CONFIG_TITLE" class="view-title">配置</h2>
+            <dl class="config-summary">
+              <dt data-i18n="CONFIG_SAVE_DIR">存档目录</dt><dd id="current-save-dir">…</dd>
+              <dt data-i18n="CONFIG_BACKUP_DIR">备份目录</dt><dd id="current-backup-dir">…</dd>
+              <dt data-i18n="CONFIG_LANGUAGE">界面语言</dt><dd id="current-language">…</dd>
+            </dl>
+            <div class="action-row" id="lang-switcher">
+              <span data-i18n="CONFIG_LANGUAGE">界面语言</span>
+              <select id="lang-select">
+                <option value="zh-CN" data-i18n="CONFIG_LANG_ZH">简体中文</option>
+                <option value="en-US" data-i18n="CONFIG_LANG_EN">English</option>
+              </select>
+            </div>
+            <button type="button" id="reset-config" data-i18n="CONFIG_RESET">重置配置</button>
 
-        <section class="backup-section">
-          <div class="backup-header">
-            <h2 data-i18n="BACKUP_TITLE">备份管理</h2>
-            <span class="game-status" id="game-status">…</span>
-          </div>
-          <div class="action-row">
-            <button type="button" id="create-backup" class="primary" data-i18n="BACKUP_NOW">立即备份</button>
-            <button type="button" id="refresh-list" data-i18n="BACKUP_REFRESH">刷新列表</button>
-          </div>
-          <table class="backup-list">
-            <thead>
-              <tr>
-                <th data-i18n="HEADER_TIME">备份时间</th>
-                <th data-i18n="HEADER_SIZE">大小</th>
-                <th data-i18n="HEADER_ACTIONS">操作</th>
-              </tr>
-            </thead>
-            <tbody id="backup-rows">
-              <tr><td colspan="3" class="empty" data-i18n="BACKUP_LOADING">加载中…</td></tr>
-            </tbody>
-          </table>
-        </section>
+            <hr />
 
-        <details class="config-section">
-          <summary data-i18n="LEVELS_TITLE">关卡编辑器（levels.txt）</summary>
-          <p class="hint" data-i18n="LEVELS_HINT">切换每关的通关标志。仅修改第二列，其他字段原样保留。修改前会自动备份原文件到存档目录下的 <code>levels_backups/</code>。</p>
-          <div class="action-row">
-            <button type="button" id="levels-reload" data-i18n="LEVELS_RELOAD">重新读取</button>
-            <input type="text" id="levels-search" data-i18n-placeholder="LEVELS_SEARCH_PH" placeholder="过滤关卡 ID…" />
-            <span class="spacer"></span>
-            <span id="levels-pending" class="hint inline" data-i18n="LEVELS_NO_PENDING">无修改</span>
-            <button type="button" id="levels-discard" disabled data-i18n="LEVELS_DISCARD">放弃修改</button>
-            <button type="button" id="levels-save" class="primary" disabled data-i18n="LEVELS_SAVE">保存修改</button>
-          </div>
-          <table class="backup-list">
-            <thead>
-              <tr>
-                <th style="width:60px" data-i18n="LEVELS_HEADER_DONE">通关</th>
-                <th data-i18n="LEVELS_HEADER_NAME">关卡名</th>
-                <th data-i18n="LEVELS_HEADER_SOL">方案</th>
-                <th style="width:90px" data-i18n="LEVELS_HEADER_RECORDS">记录数</th>
-              </tr>
-            </thead>
-            <tbody id="levels-rows">
-              <tr><td colspan="4" class="empty" data-i18n="LEVELS_EMPTY">点击「重新读取」加载。</td></tr>
-            </tbody>
-          </table>
-        </details>
-
-        <details class="config-section" id="character-section" open>
-          <summary data-i18n="CHARACTER_TITLE">角色替换（mentor 对话人物）</summary>
-          <p class="hint" data-i18n="CHARACTER_HINT">把游戏的 mentor 对话人物换成你喜欢的图片。游戏本体原图首次使用时自动备份。</p>
-          <div id="character-warn" class="hint warn" hidden></div>
-          <div id="character-status" class="hint inline">加载中…</div>
-          <div class="action-row">
-            <button type="button" id="character-create" data-i18n="CHARACTER_NEW">新建我的角色</button>
-            <button type="button" id="character-restore-default" data-i18n="CHARACTER_RESTORE">恢复游戏原图</button>
-          </div>
-          <h3 class="sub-config-title" data-i18n="CHARACTER_DEFAULT_GROUP">预装角色</h3>
-          <div class="character-grid" id="character-defaults">
-            <div class="character-empty" data-i18n="CHARACTER_DEFAULT_EMPTY">暂无预装角色。</div>
-          </div>
-          <h3 class="sub-config-title" data-i18n="CHARACTER_CUSTOM_GROUP">我的角色</h3>
-          <table class="backup-list">
-            <thead>
-              <tr>
-                <th data-i18n="CHARACTER_SLOT_NEUTRAL">中性</th>
-                <th data-i18n="CHARACTER_SLOT_SMILE">微笑</th>
-                <th>名称</th>
-                <th data-i18n="HEADER_ACTIONS">操作</th>
-              </tr>
-            </thead>
-            <tbody id="character-customs">
-              <tr><td colspan="4" class="empty" data-i18n="CHARACTER_EMPTY">暂无角色。</td></tr>
-            </tbody>
-          </table>
-        </details>
+            <h3 class="sub-config-title" data-i18n="AUTO_TITLE">自动备份</h3>
+            <p class="hint" data-i18n="AUTO_HINT">软件运行期间按间隔自动备份。游戏中也会执行（热备）。超出保留个数时最旧的备份会被自动清理。</p>
+            <div class="auto-grid">
+              <label class="auto-row">
+                <input type="checkbox" id="auto-enabled" />
+                <span data-i18n="AUTO_ENABLED">启用自动备份</span>
+              </label>
+              <label class="auto-row">
+                <span data-i18n="AUTO_INTERVAL">间隔（分钟）</span>
+                <input type="number" id="auto-interval" min="1" max="1440" />
+              </label>
+              <label class="auto-row">
+                <span data-i18n="AUTO_KEEP">保留个数</span>
+                <input type="number" id="auto-keep" min="1" max="999" />
+              </label>
+            </div>
+            <div class="action-row">
+              <button type="button" id="auto-save" class="primary" data-i18n="AUTO_SAVE">保存自动备份设置</button>
+              <span class="hint inline" id="auto-status">—</span>
+            </div>
+          </section>
+        </div>
       </section>
     </main>
 

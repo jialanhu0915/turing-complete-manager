@@ -129,6 +129,12 @@ const DICT: Record<Locale, Dict> = {
     BACKUP_DELETE_CONFIRM: "确认删除备份「{name}」？此操作不可撤销。",
     BACKUP_DELETE_FAILED: "删除失败：{err}",
 
+    // 侧栏
+    SIDEBAR_BACKUP: "备份",
+    SIDEBAR_CHARACTER: "角色",
+    SIDEBAR_LEVELS: "关卡",
+    SIDEBAR_CONFIG: "配置",
+
     // 关卡编辑器
     LEVELS_TITLE: "关卡编辑器（levels.txt）",
     LEVELS_HINT:
@@ -323,6 +329,12 @@ const DICT: Record<Locale, Dict> = {
     BACKUP_DELETE_CONFIRM:
       'Delete backup "{name}"? This cannot be undone.',
     BACKUP_DELETE_FAILED: "Delete failed: {err}",
+
+    // Sidebar
+    SIDEBAR_BACKUP: "Backups",
+    SIDEBAR_CHARACTER: "Characters",
+    SIDEBAR_LEVELS: "Levels",
+    SIDEBAR_CONFIG: "Settings",
 
     LEVELS_TITLE: "Level editor (levels.txt)",
     LEVELS_HINT:
