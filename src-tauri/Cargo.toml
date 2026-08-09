@@ -1,6 +1,6 @@
 [package]
 name = "turing-complete-manager"
-version = "0.2.0"
+version = "0.3.0"
 description = "Save manager for Turing Complete"
 authors = ["you"]
 edition = "2021"
