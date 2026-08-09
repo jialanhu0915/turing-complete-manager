@@ -198,6 +198,8 @@ const DICT: Record<Locale, Dict> = {
     CHARACTER_SNAPSHOT_PENDING: "原图快照：未（首次应用时自动创建）",
     CHARACTER_EMPTY: "暂无角色。",
     CHARACTER_STATUS_LOADING: "加载中…",
+    CHARACTER_NAME_HINT: "请使用英文字母开头，后跟字母、数字、下划线或连字符（游戏只支持字母名）。",
+    CHARACTER_NAME_INVALID: "角色名格式错误：必须以英文字母开头，后跟字母/数字/下划线/连字符",
 
     // Rust 错误
     CHARACTER_NAME_EMPTY: "角色名不能为空",
@@ -402,6 +404,8 @@ const DICT: Record<Locale, Dict> = {
     CHARACTER_SNAPSHOT_PENDING: "Originals: not yet backed up (auto-created on first apply)",
     CHARACTER_EMPTY: "No characters yet.",
     CHARACTER_STATUS_LOADING: "Loading…",
+    CHARACTER_NAME_HINT: "Must start with a letter, followed by letters, digits, underscores, or hyphens (the game only accepts letter-based names).",
+    CHARACTER_NAME_INVALID: "Invalid name format: must start with a letter, followed by letters/digits/underscores/hyphens",
 
     // Rust errors
     CHARACTER_NAME_EMPTY: "Character name cannot be empty",

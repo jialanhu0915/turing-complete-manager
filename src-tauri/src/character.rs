@@ -101,6 +101,27 @@ const TEST_BASE_ENV: &str = "TC_CHARACTER_TEST_BASE";
 #[cfg(test)]
 const TEST_GAME_DIR_ENV: &str = "TC_CHARACTER_TEST_GAME_DIR";
 
+// ===== 校验 =====
+
+/// 角色名格式：以英文字母开头，后跟字母/数字/下划线/连字符。
+/// 游戏本身只支持字母命名，所以中文/空格等会拒。
+fn validate_character_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("CHARACTER_NAME_EMPTY".to_string());
+    }
+    let bytes = name.as_bytes();
+    if !bytes[0].is_ascii_alphabetic() {
+        return Err("CHARACTER_NAME_INVALID".to_string());
+    }
+    for &b in &bytes[1..] {
+        let ok = b.is_ascii_alphabetic() || b.is_ascii_digit() || b == b'_' || b == b'-';
+        if !ok {
+            return Err("CHARACTER_NAME_INVALID".to_string());
+        }
+    }
+    Ok(())
+}
+
 // ===== 路径解析 =====
 
 /// 预装角色根目录。dev 模式从源码目录读，release 从安装目录读。
@@ -384,9 +405,7 @@ pub fn restore_default_impl() -> Result<(), String> {
 
 pub fn create_character_impl(name: &str) -> Result<Character, String> {
     let name = name.trim();
-    if name.is_empty() {
-        return Err("CHARACTER_NAME_EMPTY".to_string());
-    }
+    validate_character_name(name)?;
     let mut idx = load_custom_index();
     if idx.characters.iter().any(|c| c.name == name) {
         return Err("CHARACTER_NAME_DUP".to_string());
@@ -442,9 +461,7 @@ pub fn delete_character_impl(id: &str) -> Result<(), String> {
 
 pub fn duplicate_character_impl(id: &str, new_name: &str) -> Result<Character, String> {
     let new_name = new_name.trim();
-    if new_name.is_empty() {
-        return Err("CHARACTER_NAME_EMPTY".to_string());
-    }
+    validate_character_name(new_name)?;
     if !id.starts_with("default:") {
         return Err("CHARACTER_NOT_FOUND".to_string());
     }
@@ -730,7 +747,7 @@ mod tests {
         fs::write(dir.join(NEUTRAL_FILE), b"DUP_N").unwrap();
         fs::write(dir.join(SMILE_FILE), b"DUP_S").unwrap();
 
-        let ch = duplicate_character_impl("default:dup_test", "我的副本").unwrap();
+        let ch = duplicate_character_impl("default:dup_test", "DupCopy").unwrap();
         let uuid = ch.id.strip_prefix("custom:").unwrap();
         let dst = char_dir(uuid).unwrap();
         assert_eq!(fs::read(dst.join(NEUTRAL_FILE)).unwrap(), b"DUP_N");
@@ -754,5 +771,21 @@ mod tests {
         assert!(check_install_writable());
 
         teardown(&install);
+    }
+
+    #[test]
+    fn character_name_validation() {
+        // 合法
+        assert!(validate_character_name("Steve").is_ok());
+        assert!(validate_character_name("My_Cat-1").is_ok());
+        assert!(validate_character_name("a").is_ok());
+        assert!(validate_character_name("X9").is_ok());
+        // 非法
+        assert_eq!(validate_character_name("").unwrap_err(), "CHARACTER_NAME_EMPTY");
+        assert_eq!(validate_character_name("我的猫").unwrap_err(), "CHARACTER_NAME_INVALID");
+        assert_eq!(validate_character_name("My Cat").unwrap_err(), "CHARACTER_NAME_INVALID");
+        assert_eq!(validate_character_name("1Cat").unwrap_err(), "CHARACTER_NAME_INVALID");
+        assert_eq!(validate_character_name("-Cat").unwrap_err(), "CHARACTER_NAME_INVALID");
+        assert_eq!(validate_character_name("Cat!").unwrap_err(), "CHARACTER_NAME_INVALID");
     }
 }

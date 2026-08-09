@@ -36,6 +36,17 @@ export interface CharacterStatus {
 
 export type Slot = "neutral" | "smile";
 
+// ===== 校验 =====
+
+/** 角色名规则：字母开头，后跟字母/数字/下划线/连字符。游戏本身只支持字母命名。 */
+const NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+function validateCharacterName(name: string): string | null {
+  if (!name) return t("CHARACTER_NAME_EMPTY");
+  if (!NAME_REGEX.test(name)) return t("CHARACTER_NAME_INVALID");
+  return null;
+}
+
 // ===== 状态 =====
 
 let characters: Character[] = [];
@@ -296,6 +307,11 @@ export async function refreshCharacters(): Promise<void> {
 // ===== 操作 =====
 
 async function doCreate(name: string): Promise<void> {
+  const err = validateCharacterName(name);
+  if (err) {
+    alert(err);
+    return;
+  }
   try {
     await invoke<Character>("create_character", { name });
     await refreshCharacters();
@@ -324,6 +340,11 @@ async function doDelete(id: string, name: string): Promise<void> {
 }
 
 async function doDuplicate(defaultId: string, newName: string): Promise<void> {
+  const err = validateCharacterName(newName);
+  if (err) {
+    alert(err);
+    return;
+  }
   try {
     await invoke<Character>("duplicate_character", { id: defaultId, newName });
     await refreshCharacters();
