@@ -112,7 +112,7 @@ fn is_level_input(kind: u16) -> bool {
     matches!(kind, 60 | 61 | 62 | 63 | 64 | 65 | 106)
 }
 fn is_level_output(kind: u16) -> bool {
-    matches!(kind, 40 | 58 | 68 | 69 | 70 | 73 | 74 | 75 | 77)
+    matches!(kind, 40 | 58 | 68 | 69 | 70 | 73 | 74 | 75 | 77 | 112)
 }
 
 /// Per-cycle simulation expressions for a combinational component, given the
@@ -310,12 +310,28 @@ fn emit_circuit_sim(
     }
     let mut out_fields: HashMap<usize, (String, String)> = HashMap::new();
     {
-        let mut fields = tpl.output_fields.iter();
+        // Output components split by kind: kind 112 = z-flag, others = value.
+        // Vec order within each group maps to the corresponding tpl field list.
+        let mut value_fields = tpl.output_fields.iter().cloned();
+        let mut z_fields = tpl
+            .output_z_fields
+            .iter()
+            .cloned()
+            .map(|z| (z, "Bool".to_string()));
         for (idx, comp) in components.iter().enumerate() {
-            if is_level_output(comp.kind) {
-                let f = fields.next().ok_or("MISSING_OUTPUT_FIELD")?.clone();
-                out_fields.insert(idx, f);
+            if !is_level_output(comp.kind) {
+                continue;
             }
+            let f = if comp.kind == 112 {
+                z_fields
+                    .next()
+                    .ok_or("MISSING_OUTPUT_Z_FIELD")?
+            } else {
+                value_fields
+                    .next()
+                    .ok_or("MISSING_OUTPUT_FIELD")?
+            };
+            out_fields.insert(idx, f);
         }
     }
 
@@ -366,6 +382,7 @@ fn emit_circuit_sim(
             // One component ↔ one Output port; value read from its input pin's
             // driver. Undriven → constant 0 (broken circuit; check_output's
             // comparison fails against a high expected). `ftype` prefixes it.
+            // Z-flag outputs (kind 112) write a Bool directly without prefix.
             let (fname, ftype) = out_fields
                 .get(&ci)
                 .ok_or("MISSING_OUTPUT_FIELD")?
@@ -378,7 +395,12 @@ fn emit_circuit_sim(
                 None => "0x0".to_string(),
             };
             lines.push(cmt);
-            lines.push(format!(".level_output.{fname} = {ftype} {src}"));
+            if comp.kind == 112 {
+                // z-flag: Bool field, no ftype prefix.
+                lines.push(format!(".level_output.{fname} = {src} != 0x0"));
+            } else {
+                lines.push(format!(".level_output.{fname} = {ftype} {src}"));
+            }
         } else {
             let inputs: Vec<(InputSrc, i64)> = pins
                 .iter()
@@ -745,20 +767,39 @@ fn gate_components(circuit: &Circuit) -> usize {
 /// from test.si (test.si's field type is best-effort: the `#CORRECT_OUTPUT`
 /// element type, else U1). kind 68 (1-pin) is always U1; kind 69 (word) is
 /// `U{word_size}`. Overrides the template's types and rebuilds the struct.
+///
+/// Output components split into two kinds:
+/// - value outputs (kind 68/69/70/73/74/75/77) — one per `tpl.output_fields`
+/// - z-flag outputs (kind 112) — one per `tpl.output_z_fields`
+///
+/// A level may have z-flag fields in `check_output` but no z probe in the
+/// circuit; in that case the field is left at the struct default (false).
 fn correct_output_types(mut tpl: LevelTemplate, circuit: &Circuit) -> Result<LevelTemplate, String> {
-    let output_comps: Vec<&Component> = circuit
+    let value_comps: Vec<&Component> = circuit
         .components
         .iter()
-        .filter(|c| is_level_output(c.kind))
+        .filter(|c| is_level_output(c.kind) && c.kind != 112)
         .collect();
-    if output_comps.len() != tpl.output_fields.len() {
+    let z_comps: Vec<&Component> = circuit
+        .components
+        .iter()
+        .filter(|c| c.kind == 112)
+        .collect();
+    if value_comps.len() != tpl.output_fields.len() {
         return Err(format!(
-            "OUTPUT_FIELD_COUNT_MISMATCH|circuit={} tpl={}",
-            output_comps.len(),
+            "OUTPUT_FIELD_COUNT_MISMATCH|value circuit={} tpl={}",
+            value_comps.len(),
             tpl.output_fields.len()
         ));
     }
-    for (comp, field) in output_comps.iter().zip(tpl.output_fields.iter_mut()) {
+    if z_comps.len() > tpl.output_z_fields.len() {
+        return Err(format!(
+            "OUTPUT_FIELD_COUNT_MISMATCH|z circuit={} tpl={}",
+            z_comps.len(),
+            tpl.output_z_fields.len()
+        ));
+    }
+    for (comp, field) in value_comps.iter().zip(tpl.output_fields.iter_mut()) {
         let t = if comp.kind == 68 {
             "U1".to_string()
         } else {

@@ -267,6 +267,7 @@ fn pin_schemas(kind: u16) -> Option<Vec<PinSpec>> {
             inp1("in1", -1, 0),
             pin("out".to_string(), Output, 1, 0, Some(2)),
         ],
+        112 => vec![inp1("value", -1, 0)],
         118 => vec![],
         _ => return None,
     };
