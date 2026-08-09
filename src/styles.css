@@ -315,6 +315,41 @@ button.primary:hover:not(:disabled) {
   color: #cf222e;
 }
 
+.row-actions .action-verify {
+  border-color: #1f6feb;
+  color: #1f6feb;
+}
+
+.verify-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.verify-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.verify-result {
+  font-weight: 600;
+  color: #57606a;
+}
+
+.verify-result.pass {
+  color: #2c974b;
+}
+
+.verify-result.fail {
+  color: #cf222e;
+}
+
+.verify-section select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #e6edf3;
@@ -386,6 +421,16 @@ button.primary:hover:not(:disabled) {
   }
   .row-actions .action-delete {
     border-color: #f85149;
+    color: #ff7b72;
+  }
+  .row-actions .action-verify {
+    border-color: #388bfd;
+    color: #58a6ff;
+  }
+  .verify-result.pass {
+    color: #56d364;
+  }
+  .verify-result.fail {
     color: #ff7b72;
   }
 }

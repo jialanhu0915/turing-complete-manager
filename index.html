@@ -145,6 +145,36 @@
             </tbody>
           </table>
         </details>
+
+        <section class="verify-section">
+          <div class="backup-header">
+            <h2 data-i18n="VERIFY_TITLE">电路验证</h2>
+            <span class="game-status" id="verify-game-status">…</span>
+          </div>
+          <p class="hint" id="verify-hint" data-i18n="VERIFY_HINT">
+            用游戏本体验证电路。需检测到 Turing Complete 安装（compile.dll + campaign/）。
+          </p>
+          <div class="verify-row">
+            <label class="auto-row">
+              <span data-i18n="VERIFY_LEVEL">关卡</span>
+              <select id="verify-level"></select>
+            </label>
+            <span class="spacer"></span>
+            <button type="button" id="verify-refresh" data-i18n="VERIFY_REFRESH">刷新方案</button>
+          </div>
+          <table class="backup-list">
+            <thead>
+              <tr>
+                <th data-i18n="VERIFY_HEADER_SCHEME">方案</th>
+                <th data-i18n="VERIFY_HEADER_RESULT">结果</th>
+                <th data-i18n="HEADER_ACTIONS">操作</th>
+              </tr>
+            </thead>
+            <tbody id="verify-rows">
+              <tr><td colspan="3" class="empty" data-i18n="VERIFY_EMPTY">选择关卡后查看方案列表。</td></tr>
+            </tbody>
+          </table>
+        </section>
       </section>
     </main>
   </body>

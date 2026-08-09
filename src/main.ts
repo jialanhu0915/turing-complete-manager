@@ -45,6 +45,8 @@ interface LevelName {
 
 let cfg: AppConfig | null = null;
 let currentStep = 1;
+let verifyGameAvailable = false;
+let verifyResults = new Map<string, { ok: boolean; text: string }>();
 
 function $<T extends HTMLElement>(sel: string): T {
   const el = document.querySelector<T>(sel);
@@ -110,6 +112,18 @@ async function showMain(): Promise<void> {
   $("#current-language").textContent = cfg!.language;
   $<HTMLSelectElement>("#lang-select").value = cfg!.language;
   fillAutoBackupForm();
+  // Ensure levelNames is loaded before the verify <select> needs it.
+  if (levelNames.size === 0) {
+    try {
+      const names = await invoke<Record<string, LevelName>>("list_level_names");
+      levelNames = new Map(Object.entries(names));
+    } catch (e) {
+      console.error("failed to load level names:", e);
+    }
+  }
+  fillVerifyLevelSelect();
+  await refreshVerifyGameStatus();
+  await refreshVerifySchemes();
   await Promise.all([refreshGameStatus(), refreshBackupList()]);
 }
 
@@ -462,6 +476,126 @@ async function saveLevelChanges(): Promise<void> {
   }
 }
 
+async function refreshVerifyGameStatus(): Promise<void> {
+  const el = $("#verify-game-status");
+  try {
+    verifyGameAvailable = await invoke<boolean>("is_game_available");
+    el.textContent = verifyGameAvailable
+      ? t("VERIFY_GAME_AVAILABLE")
+      : t("VERIFY_GAME_MISSING");
+    el.classList.toggle("warn", !verifyGameAvailable);
+  } catch {
+    verifyGameAvailable = false;
+    el.textContent = t("GAME_UNKNOWN");
+    el.classList.add("warn");
+  }
+}
+
+function fillVerifyLevelSelect(): void {
+  const sel = $<HTMLSelectElement>("#verify-level");
+  const prev = sel.value;
+  const rows = Array.from(levelNames.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  sel.innerHTML = "";
+  if (rows.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = t("VERIFY_EMPTY_LEVELS");
+    sel.appendChild(opt);
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  for (const [id, name] of rows) {
+    const opt = document.createElement("option");
+    opt.value = id;
+    const display = `${id} — ${name.en} / ${name["zh-CN"]}`;
+    opt.textContent = display;
+    sel.appendChild(opt);
+  }
+  if (prev && rows.some(([id]) => id === prev)) sel.value = prev;
+}
+
+async function refreshVerifySchemes(): Promise<void> {
+  const tbody = $("#verify-rows");
+  tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(t("VERIFY_LOADING"))}</td></tr>`;
+  const levelId = $<HTMLSelectElement>("#verify-level").value;
+  if (!levelId || !verifyGameAvailable) {
+    tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(t("VERIFY_EMPTY"))}</td></tr>`;
+    return;
+  }
+  try {
+    const schemes = await invoke<string[]>("list_schematics", { levelId });
+    if (schemes.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(t("VERIFY_NO_SCHEMES"))}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = "";
+    for (const scheme of schemes) {
+      const key = `${levelId}/${scheme}`;
+      const prev = verifyResults.get(key);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(scheme)}</td>
+        <td class="verify-result">${prev ? escapeHtml(prev.text) : ""}</td>
+        <td class="row-actions">
+          <button type="button" class="action-verify" data-scheme="${escapeAttr(scheme)}">${escapeHtml(t("VERIFY_RUNNING"))}</button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+    tbody.querySelectorAll<HTMLButtonElement>(".action-verify").forEach((btn) => {
+      btn.addEventListener("click", () => doVerify(btn.dataset.scheme!));
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="3" class="empty">${escapeHtml(tErr(String(e)))}</td></tr>`;
+  }
+}
+
+async function doVerify(scheme: string): Promise<void> {
+  const levelId = $<HTMLSelectElement>("#verify-level").value;
+  if (!verifyGameAvailable) {
+    alert(t("VERIFY_GAME_NOT_LOADED"));
+    return;
+  }
+  const btn = $<HTMLButtonElement>(
+    `#verify-rows .action-verify[data-scheme="${cssEscape(scheme)}"]`
+  );
+  const resultCell = btn?.closest("tr")?.querySelector(".verify-result");
+  if (btn) btn.disabled = true;
+  if (resultCell) resultCell.textContent = t("VERIFY_RUNNING");
+  try {
+    const r = await invoke<{ ok: boolean; test_result: number; cycles_run: number; error: string | null }>(
+      "verify_circuit",
+      { levelId, schemeId: scheme }
+    );
+    if (!r.ok) throw new Error(r.error || "VERIFY_FAILED");
+    const label =
+      r.test_result === 0
+        ? t("VERIFY_PASS")
+        : r.test_result === 1
+          ? t("VERIFY_WIN")
+          : t("VERIFY_FAIL");
+    const text = t("VERIFY_RESULT_WITH_CYCLES", { result: label, cycles: r.cycles_run });
+    verifyResults.set(`${levelId}/${scheme}`, { ok: r.test_result < 2, text });
+    if (resultCell) {
+      resultCell.textContent = text;
+      resultCell.classList.toggle("pass", r.test_result < 2);
+      resultCell.classList.toggle("fail", r.test_result >= 2);
+    }
+  } catch (e) {
+    const msg = tErr(String(e));
+    verifyResults.set(`${levelId}/${scheme}`, { ok: false, text: msg });
+    if (resultCell) resultCell.textContent = msg;
+    alert(t("VERIFY_FAILED_ALERT", { err: msg }));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** Minimal CSS.escape() for selectors — we only need to escape scheme IDs. */
+function cssEscape(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`);
+}
+
 async function switchLanguage(newLang: Locale): Promise<void> {
   if (!cfg) return;
   setLocale(newLang);
@@ -519,6 +653,12 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#lang-select").addEventListener("change", () => {
     const v = $<HTMLSelectElement>("#lang-select").value as Locale;
     switchLanguage(v).catch((e) => console.error("switchLanguage failed:", e));
+  });
+  $("#verify-level").addEventListener("change", () => {
+    refreshVerifySchemes();
+  });
+  $("#verify-refresh").addEventListener("click", () => {
+    refreshVerifySchemes();
   });
   listen("auto-backup-done", () => {
     refreshBackupList();
