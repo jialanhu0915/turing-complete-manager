@@ -94,7 +94,12 @@ fn cache_path() -> Option<PathBuf> {
 /// 加载关卡名映射：先读缓存；若缓存比游戏 translations 目录旧或缺 zh-CN，则重新解析。
 /// 失败（找不到游戏 / 解析错误）一律返回空 map —— 前端按只显示 ID 处理。
 pub fn load_level_names() -> LevelNames {
-    let game_dir = match detect_game_dir() {
+    // 走 config cache（启动 warm-up 写过；手动指定也走这里），确保翻译和角色共享一份。
+    let cfg = match crate::config::load() {
+        Some(c) => c,
+        None => return read_cache().unwrap_or_default(),
+    };
+    let game_dir = match crate::config::resolve_game_dir(&cfg) {
         Some(d) => d,
         None => return read_cache().unwrap_or_default(),
     };

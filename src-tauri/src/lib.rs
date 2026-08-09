@@ -1,7 +1,7 @@
 use serde::Serialize;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -34,10 +34,55 @@ fn detect_save_dir() -> DetectSaveDir {
 }
 
 #[tauri::command]
-fn detect_install_dir() -> String {
-    config::detect_install_dir()
+fn detect_backup_dir() -> String {
+    config::default_backup_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[tauri::command]
+fn detect_game_dir() -> Option<String> {
+    let mut cfg = config::load()?;
+    config::detect_and_persist_game_dir(&mut cfg)
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn set_game_dir(path: String) -> Result<(), String> {
+    let mut cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    config::set_game_dir_manual(&mut cfg, PathBuf::from(path));
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct GameDirStatus {
+    path: Option<String>,
+    source: String,
+    /// `<path>/Turing Complete.exe` 是否存在
+    exists: bool,
+}
+
+#[tauri::command]
+fn get_game_dir_status() -> GameDirStatus {
+    let cfg = config::load();
+    let (path, source) = match cfg.as_ref() {
+        Some(c) => (c.game_dir.clone(), c.game_dir_source.clone()),
+        None => (None, config::GameDirSource::Auto),
+    };
+    let exists = path
+        .as_deref()
+        .map(PathBuf::from)
+        .map(|p| p.join("Turing Complete.exe").exists())
+        .unwrap_or(false);
+    let source_str = match source {
+        config::GameDirSource::Auto => "auto",
+        config::GameDirSource::Manual => "manual",
+    };
+    GameDirStatus {
+        path,
+        source: source_str.to_string(),
+        exists,
+    }
 }
 
 #[tauri::command]
@@ -197,6 +242,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            warm_game_dir_cache();
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 auto_backup_loop(handle);
@@ -206,7 +252,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             detect_save_dir,
-            detect_install_dir,
+            detect_backup_dir,
+            detect_game_dir,
+            set_game_dir,
+            get_game_dir_status,
             get_config,
             set_config,
             list_backups,
@@ -229,6 +278,22 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 启动时跑一次：补全 cfg.game_dir（用户没手动指定的前提下）。
+/// 失败就静默 —— UI 会显示"未检测到"，用户可走"浏览..."手动覆盖。
+fn warm_game_dir_cache() {
+    let Some(mut cfg) = config::load() else { return };
+    // 用户手动指定过：不覆盖
+    if cfg.game_dir_source == config::GameDirSource::Manual {
+        return;
+    }
+    // 缓存路径仍有效：跳过
+    if config::resolve_game_dir(&cfg).is_some() {
+        return;
+    }
+    // 跑一次检测，结果写入 cfg + 落盘
+    let _ = config::detect_and_persist_game_dir(&mut cfg);
 }
 
 /// 后台循环：按配置中的间隔自动备份；启用变更后 60s 内生效。

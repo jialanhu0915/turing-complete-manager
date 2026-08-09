@@ -292,7 +292,8 @@ fn game_dialogue_dir() -> Result<PathBuf, String> {
     Ok(d)
 }
 
-/// 游戏根目录解析：单测可通过 TC_CHARACTER_TEST_GAME_DIR 覆盖。
+/// 游戏根目录解析：单测可通过 TC_CHARACTER_TEST_GAME_DIR 覆盖；
+/// 生产代码走 config cache（启动时 warm-up 写入，手动指定也可生效）。
 fn detect_game_root() -> Option<PathBuf> {
     #[cfg(test)]
     {
@@ -300,7 +301,8 @@ fn detect_game_root() -> Option<PathBuf> {
             return Some(PathBuf::from(p));
         }
     }
-    crate::translations::detect_game_dir()
+    let cfg = crate::config::load()?;
+    crate::config::resolve_game_dir(&cfg)
 }
 
 /// 首次替换前快照原图。后续调用跳过（永不覆盖）。
