@@ -146,6 +146,29 @@ fn restore_default_character() -> Result<(), String> {
     character::restore_default_impl()
 }
 
+/// 用系统默认浏览器打开外部链接。
+///
+/// Tauri 2 的 WebView2 默认拦截 `target="_blank"`，所以 QQ 群这种外链必须主动调起来。
+/// Windows 下用 `cmd /c start "" <url>`：空字符串是 start 的窗口标题参数，避免被当成 title。
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("OPEN_URL_FAILED|{e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("OPEN_URL_UNSUPPORTED".to_string())
+    }
+}
+
 fn is_game_running_inner() -> bool {
     #[cfg(windows)]
     {
@@ -202,6 +225,7 @@ pub fn run() {
             save_character_image,
             apply_character,
             restore_default_character,
+            open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -549,5 +549,13 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll<HTMLButtonElement>("#main .nav-item").forEach((btn) => {
     btn.addEventListener("click", () => switchView(btn.dataset.view as ViewName));
   });
+  // Tauri WebView2 默认拦截 target=_blank，所以 QQ 群链接必须主动调系统浏览器
+  $("#sidebar-qq").addEventListener("click", (e) => {
+    e.preventDefault();
+    const url = $("#sidebar-qq").getAttribute("href") ?? "";
+    invoke("open_external_url", { url }).catch((err) =>
+      console.error("open_external_url failed:", err)
+    );
+  });
   init().catch((e) => alert(t("INIT_FAILED", { err: tErr(String(e)) })));
 });
