@@ -68,7 +68,7 @@ const DICT: Record<Locale, Dict> = {
       "⚠ 未在该路径检测到存档目录，请确认游戏至少启动过一次",
     WIZARD_BACKUP_TITLE: "选择备份目录",
     WIZARD_BACKUP_HINT:
-      "默认与软件安装目录相同（其下的 backups 子目录）。",
+      "默认存放在软件配置目录下的 backups 子目录（卸载软件时不会丢失）。",
     WIZARD_LANG_TITLE: "选择界面语言",
     WIZARD_LANG_ZH: "简体中文",
     WIZARD_LANG_EN: "English",
@@ -82,6 +82,17 @@ const DICT: Record<Locale, Dict> = {
     CONFIG_TITLE: "配置",
     CONFIG_SAVE_DIR: "存档目录",
     CONFIG_BACKUP_DIR: "备份目录",
+    CONFIG_GAME_DIR: "游戏目录",
+    CONFIG_GAME_DIR_SOURCE_AUTO: "自动检测",
+    CONFIG_GAME_DIR_SOURCE_MANUAL: "手动指定",
+    CONFIG_GAME_DIR_INVALID:
+      "路径无效（找不到 Turing Complete.exe）",
+    CONFIG_GAME_DIR_NOT_FOUND:
+      "未检测到（请确认 Steam 已安装并启动过一次游戏）",
+    CONFIG_GAME_DIR_REDETECT: "重新检测",
+    CONFIG_GAME_DIR_BROWSE: "浏览…",
+    CONFIG_GAME_DIR_REDETECT_FAILED: "重新检测失败：{err}",
+    CONFIG_GAME_DIR_SET_FAILED: "设置失败：{err}",
     CONFIG_LANGUAGE: "界面语言",
     CONFIG_LANG_ZH: "简体中文",
     CONFIG_LANG_EN: "English",
@@ -273,7 +284,7 @@ const DICT: Record<Locale, Dict> = {
       "⚠ No save directory at this path. Make sure the game has been launched at least once.",
     WIZARD_BACKUP_TITLE: "Choose backup directory",
     WIZARD_BACKUP_HINT:
-      "Defaults to a backups subfolder next to the installed app.",
+      "Defaults to the backups subfolder of the app's config directory (survives reinstalls).",
     WIZARD_LANG_TITLE: "Choose UI language",
     WIZARD_LANG_ZH: "简体中文",
     WIZARD_LANG_EN: "English",
@@ -286,6 +297,17 @@ const DICT: Record<Locale, Dict> = {
     CONFIG_TITLE: "Settings",
     CONFIG_SAVE_DIR: "Save directory",
     CONFIG_BACKUP_DIR: "Backup directory",
+    CONFIG_GAME_DIR: "Game directory",
+    CONFIG_GAME_DIR_SOURCE_AUTO: "Auto-detected",
+    CONFIG_GAME_DIR_SOURCE_MANUAL: "Manually set",
+    CONFIG_GAME_DIR_INVALID:
+      "Path is invalid (no Turing Complete.exe found)",
+    CONFIG_GAME_DIR_NOT_FOUND:
+      "Not detected (make sure Steam is installed and the game has been launched once)",
+    CONFIG_GAME_DIR_REDETECT: "Re-detect",
+    CONFIG_GAME_DIR_BROWSE: "Browse…",
+    CONFIG_GAME_DIR_REDETECT_FAILED: "Re-detect failed: {err}",
+    CONFIG_GAME_DIR_SET_FAILED: "Set failed: {err}",
     CONFIG_LANGUAGE: "UI language",
     CONFIG_LANG_ZH: "简体中文",
     CONFIG_LANG_EN: "English",

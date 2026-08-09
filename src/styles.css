@@ -144,6 +144,12 @@ button.primary:hover:not(:disabled) {
   word-break: break-all;
 }
 
+.game-dir-source {
+  color: #6a737d;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
 .backup-header {
   display: flex;
   align-items: center;

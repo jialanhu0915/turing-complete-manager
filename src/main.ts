@@ -18,6 +18,8 @@ interface AppConfig {
   auto_backup_enabled: boolean;
   auto_backup_interval_min: number;
   auto_backup_keep: number;
+  game_dir: string | null;
+  game_dir_source: "auto" | "manual";
 }
 
 interface DetectSaveDir {
@@ -42,6 +44,12 @@ interface LevelRow {
 interface LevelName {
   en: string;
   "zh-CN": string;
+}
+
+interface GameDirStatus {
+  path: string | null;
+  source: string;
+  exists: boolean;
 }
 
 let cfg: AppConfig | null = null;
@@ -127,6 +135,7 @@ async function showMain(): Promise<void> {
   $("#current-language").textContent = cfg!.language;
   $<HTMLSelectElement>("#lang-select").value = cfg!.language;
   fillAutoBackupForm();
+  refreshGameDir();
   switchView("backup");
   await Promise.all([
     refreshGameStatus(),
@@ -189,9 +198,9 @@ async function saveAutoBackup(): Promise<void> {
 }
 
 async function loadWizardDefaults(): Promise<void> {
-  const [detect, installDir] = await Promise.all([
+  const [detect, backupDefault] = await Promise.all([
     invoke<DetectSaveDir>("detect_save_dir"),
-    invoke<string>("detect_install_dir"),
+    invoke<string>("detect_backup_dir"),
   ]);
   const saveInput = $<HTMLInputElement>("#save-dir-input");
   saveInput.value = detect.default_path;
@@ -205,9 +214,6 @@ async function loadWizardDefaults(): Promise<void> {
     hint.classList.add("warn");
   }
 
-  const backupDefault = installDir
-    ? installDir.replace(/[\\/]+$/, "") + "\\backups"
-    : "";
   $<HTMLInputElement>("#backup-dir-input").value = backupDefault;
 }
 
@@ -254,6 +260,8 @@ async function finishWizard(): Promise<void> {
     auto_backup_enabled: false,
     auto_backup_interval_min: 30,
     auto_backup_keep: 20,
+    game_dir: null,
+    game_dir_source: "auto",
   };
   await invoke("set_config", { cfg });
   await showMain();
@@ -263,6 +271,80 @@ async function resetConfig(): Promise<void> {
   if (!confirm(t("CONFIG_RESET_CONFIRM"))) return;
   cfg = null;
   await showWizard();
+}
+
+async function refreshGameDir(): Promise<void> {
+  const pathEl = $("#current-game-dir");
+  const badge = $<HTMLElement>("#current-game-dir-source");
+  const warn = $("#game-dir-warn");
+  if (!cfg) return;
+  if (!cfg.game_dir) {
+    pathEl.textContent = "—";
+    badge.textContent = "";
+    warn.hidden = false;
+    warn.textContent = t("CONFIG_GAME_DIR_NOT_FOUND");
+    return;
+  }
+  pathEl.textContent = cfg.game_dir;
+  badge.textContent =
+    cfg.game_dir_source === "manual"
+      ? t("CONFIG_GAME_DIR_SOURCE_MANUAL")
+      : t("CONFIG_GAME_DIR_SOURCE_AUTO");
+  // 异步校验：缓存路径可能已被用户移动 / 卸载
+  try {
+    const s = await invoke<GameDirStatus>("get_game_dir_status");
+    if (s.exists) {
+      warn.hidden = true;
+      warn.textContent = "";
+    } else {
+      warn.hidden = false;
+      warn.textContent = t("CONFIG_GAME_DIR_INVALID");
+    }
+  } catch {
+    // 校验失败不致命 —— 保留 path 显示
+  }
+}
+
+async function redetectGameDir(): Promise<void> {
+  const btn = $<HTMLButtonElement>("#redetect-game-dir");
+  btn.disabled = true;
+  try {
+    const path = await invoke<string | null>("detect_game_dir");
+    if (cfg) {
+      cfg.game_dir = path;
+      cfg.game_dir_source = "auto";
+    }
+    await refreshGameDir();
+    await refreshCharacters().catch((e) =>
+      console.error("refreshCharacters failed:", e),
+    );
+  } catch (e) {
+    alert(t("CONFIG_GAME_DIR_REDETECT_FAILED", { err: tErr(String(e)) }));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function pickGameDir(): Promise<void> {
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    defaultPath: cfg?.game_dir ?? undefined,
+  });
+  if (typeof selected !== "string") return;
+  try {
+    await invoke("set_game_dir", { path: selected });
+    if (cfg) {
+      cfg.game_dir = selected;
+      cfg.game_dir_source = "manual";
+    }
+    await refreshGameDir();
+    await refreshCharacters().catch((e) =>
+      console.error("refreshCharacters failed:", e),
+    );
+  } catch (e) {
+    alert(t("CONFIG_GAME_DIR_SET_FAILED", { err: tErr(String(e)) }));
+  }
 }
 
 async function refreshGameStatus(force = false): Promise<void> {
@@ -537,6 +619,16 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   $("#auto-save").addEventListener("click", () => {
     saveAutoBackup().catch((e) => alert(t("AUTO_SAVE_FAILED", { err: tErr(String(e)) })));
+  });
+  $("#redetect-game-dir").addEventListener("click", () => {
+    redetectGameDir().catch((e) =>
+      alert(t("CONFIG_GAME_DIR_REDETECT_FAILED", { err: tErr(String(e)) })),
+    );
+  });
+  $("#pick-game-dir").addEventListener("click", () => {
+    pickGameDir().catch((e) =>
+      alert(t("CONFIG_GAME_DIR_SET_FAILED", { err: tErr(String(e)) })),
+    );
   });
   $("#lang-select").addEventListener("change", () => {
     const v = $<HTMLSelectElement>("#lang-select").value as Locale;

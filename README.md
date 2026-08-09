@@ -67,11 +67,13 @@ Stored at `%APPDATA%\turing-complete-manager\config.json`. Editable via the UI's
 | Key | Default | Notes |
 |---|---|---|
 | `save_dir` | `%APPDATA%\Turing Complete` | Where *Turing Complete* stores saves |
-| `backup_dir` | `<install_dir>\backups` | Where the app writes `.zip` snapshots |
+| `backup_dir` | `%APPDATA%\turing-complete-manager\backups` | Where the app writes `.zip` snapshots |
 | `language` | `zh-CN` | `zh-CN` or `en-US` |
 | `auto_backup_enabled` | `false` | Toggle the background scheduler |
 | `auto_backup_interval_min` | `30` | 1–1440 |
 | `auto_backup_keep` | `20` | Oldest are pruned when exceeded |
+| `game_dir` | `null` (auto-detected on startup) | Game install path, cached after first detection |
+| `game_dir_source` | `auto` | `auto` (Steam detection) or `manual` (user-specified, not overwritten by re-detect) |
 
 A separate cached file, `level_names.json`, lives next to `config.json`. It is rebuilt automatically when the source `translations/` directory changes (mtime check).
 

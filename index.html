@@ -150,8 +150,14 @@
             <dl class="config-summary">
               <dt data-i18n="CONFIG_SAVE_DIR">存档目录</dt><dd id="current-save-dir">…</dd>
               <dt data-i18n="CONFIG_BACKUP_DIR">备份目录</dt><dd id="current-backup-dir">…</dd>
+              <dt data-i18n="CONFIG_GAME_DIR">游戏目录</dt><dd><span id="current-game-dir">…</span> <span class="game-dir-source" id="current-game-dir-source"></span></dd>
               <dt data-i18n="CONFIG_LANGUAGE">界面语言</dt><dd id="current-language">…</dd>
             </dl>
+            <div class="hint warn" id="game-dir-warn" hidden></div>
+            <div class="action-row">
+              <button type="button" id="redetect-game-dir" data-i18n="CONFIG_GAME_DIR_REDETECT">重新检测</button>
+              <button type="button" id="pick-game-dir" data-i18n="CONFIG_GAME_DIR_BROWSE">浏览…</button>
+            </div>
             <div class="action-row" id="lang-switcher">
               <span data-i18n="CONFIG_LANGUAGE">界面语言</span>
               <select id="lang-select">
