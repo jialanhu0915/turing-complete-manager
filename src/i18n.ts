@@ -134,6 +134,7 @@ const DICT: Record<Locale, Dict> = {
     SIDEBAR_CHARACTER: "角色",
     SIDEBAR_LEVELS: "关卡",
     SIDEBAR_CONFIG: "配置",
+    SIDEBAR_QQ_LABEL: "QQ 群",
 
     // 关卡编辑器
     LEVELS_TITLE: "关卡编辑器（levels.txt）",
@@ -335,6 +336,7 @@ const DICT: Record<Locale, Dict> = {
     SIDEBAR_CHARACTER: "Characters",
     SIDEBAR_LEVELS: "Levels",
     SIDEBAR_CONFIG: "Settings",
+    SIDEBAR_QQ_LABEL: "QQ Group",
 
     LEVELS_TITLE: "Level editor (levels.txt)",
     LEVELS_HINT:
