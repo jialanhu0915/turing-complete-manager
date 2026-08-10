@@ -2,7 +2,7 @@
 title: ComponentType 组件目录
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（2026-08-10 补充 wiki Components 索引 + 引脚信息校对）
+status: 已审（2026-08-10 补充 wiki Components 索引 + 引脚信息 + alpha 变更摘要）
 ---
 
 # ComponentType 组件目录
@@ -386,3 +386,20 @@ wiki 每个组件名链到一个独立页面（`Component/<NAME>`），含 pin �
 > ⚠️ Switch 的 Z 行为与 [`compile-signature.md`](compile-signature.md) §test.si API 校对中的 `Output._is_z` 直接对应——未驱动的输出会被标记为 Z 状态。这是 LLM 生成电路时必须显式处理的悬空信号。
 
 wiki 上其他组件页（RAM/ROM/Probe 等）的引脚信息尚未抓取，若需要可批量补充。
+
+### Alpha Branch（save_breaker）变更摘要
+
+> Wiki 来源：`Save_breaker_changes` 页（stable v0.1059 → alpha save_breaker 差异）。
+> 本项目面向 stable 版，但备份逻辑需考虑 alpha 存档兼容性。
+
+| 变更 | 影响 |
+|---|---|
+| **Variable width** — 线与组件改为可配置位宽 | 解释本表 `com_*_word` 覆盖所有宽度（无需独立 enum） |
+| **New Assembler** — `Program` 块移除，改用 "Assembler" 类型的 RAM load port | 本表 `com_program` 在 alpha 中不存在 |
+| **Scoring** — 公式改为 `gates * delay * ticks` | 影响任何评分/排行功能 |
+| **IO pins** — 简化为 Input（可配置位宽）和 Output | Bidirectional / Switched Output 在 alpha 中被替换 |
+| **RAM/ROM** — 模块化：RAM / Latency RAM / SSD + 独立 load/store port | Latency RAM 在本表 `com_ram` 之外（仅 alpha 存在） |
+| **组件移除** — Bit Indexer / Byte Indexer 移除；Display Matrix / Network / Sprite 在 alpha 不可用 | 本表 `com_static_indexer*` 在 alpha 中不存在 |
+| **关卡变更** — 自定义组件允许在更多关卡；**Z 状态与 0 区分**；Overture 操作码变化 | Z 状态区分与 [`compile-signature.md`](compile-signature.md) §test.si API 校对中 `Output._is_z` 对应——独立印证 |
+
+**重要警告**：从 save_breaker 切回 stable **会破坏存档**。本项目备份/恢复逻辑应考虑存档版本兼容性（检测 alpha 存档并提示用户）。
