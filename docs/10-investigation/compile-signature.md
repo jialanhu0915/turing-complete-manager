@@ -1,8 +1,8 @@
 ---
 title: compile.dll::compile 函数完整签名（2026-08-08 反汇编）
-last_updated: 2026-08-08
+last_updated: 2026-08-10
 scope: investigation
-status: 已完成 Phase A
+status: 已完成 Phase A（2026-08-10 补充 test.si wiki 校对）
 ---
 
 # compile.dll::compile 函数完整签名
@@ -234,6 +234,33 @@ settings[sim_target_cycle] = target    # 跑多少 cycle
 - 电路硬编码 result=0，对 condition=3 期望非零 → **check_output 返回 fail(2)，mode_run halt，test_result=2** ✓
 - `sim_cycle=1, running=0`（halt 于 cycle 1）✓
 - 完整实现见 `src-tauri/src/dll/exec.rs`
+
+---
+
+## test.si API 校对（wiki 对照 2026-08-10）
+
+> Wiki 来源：`turingcomplete.wiki/wiki/Custom_level_creation/test.si`（CC BY-SA 4.0）。
+> 以下只提取与我们逆向结论相关的字段；wiki 原文不复述。
+
+### `Input` / `Output` 类型——`Output._is_z` 是关键
+
+`check_output(tick, inputs, outputs)` 的入参**不是裸字典，而是带类型的结构体**：
+
+- `Input`：每个输入引脚一个字段；**非字母数字字符替换为下划线**（如 `Carry in` → `carry_in`）
+- `Output`：每个输出引脚**占两个字段**：
+  - `<name>: <位宽>` — 输出值
+  - `<name>_is_z: Bool` — `true` 表示引脚悬空 / 高阻态
+
+`Output._is_z` 这条**直接影响电路验证正确性**：玩家电路若有输出引脚未驱动，`_is_z == true`；典型 check 应在此情况判 fail。我们当前的 `exec.rs` **不区分 Z 状态**，存在误判风险——LLM 生成的电路若输出悬空，会被错误判为 pass。
+
+### 架构关卡独立 API（盲区）
+
+架构关卡（玩家用 `.isa` + `.asm` + `circuit.data` 自定义 ISA）**不走** `check_output`，改用：
+
+- `arch_check_output(test: Int, input: Int, output: Int) TestResult`
+- `arch_get_input(test: Int) Int`
+
+签名形态不同（用 `Int` 而非结构体）。这是文档盲区——目前逆向结论只覆盖**组件关卡**的 `check_output`，架构关卡协议未单独分析。
 
 ---
 

@@ -1,8 +1,8 @@
 ---
 title: 关卡与存档数据
-last_updated: 2026-08-08
+last_updated: 2026-08-10
 scope: investigation
-status: 已审
+status: 已审（2026-08-10 补架构关卡三件套）
 ---
 
 # 关卡与存档数据
@@ -37,7 +37,7 @@ C:\Users\<user>\AppData\Roaming\Turing Complete\
 │   │   │       └── circuit_backup_0.data
 │   │   ├── Overture/
 │   │   │   └── binary_search/
-│   │   │       └── new_program.asm     # ASM 程序（架构关卡）
+│   │   │       └── new_program.asm     # ASM/ISA 程序（架构关卡）
 │   │   └── ...
 │   └── ...
 ├── settings.txt                  # 游戏设置（不可读，已确认）
@@ -95,13 +95,17 @@ schematics/double_number/缺省/circuit_backup_0.data  238 B
 
 详见 [`circuit-data-format.md`](circuit-data-format.md)。
 
-### 1.3 `schematics/architecture/<level>/<scheme>/*.asm`
+### 1.3 `schematics/architecture/<level>/<scheme>/*.asm` + `*.isa`
 
-架构（Architecture）类关卡保存 **汇编程序**（`.asm` 文件），不是电路图。
+架构（Architecture）类关卡保存 **汇编程序 + ISA 声明**（`.asm` + `.isa` 文件），不是电路图本身。完整的架构关卡由**三件套**构成：
 
-例：`schematics/architecture/Overture/binary_search/new_program.asm`
+- `*.asm` — 用自定义 ISA 写的程序
+- `*.isa` — ISA 声明文件（架构名、寄存器、指令字段、操作码）
+- `circuit.data` — 该 ISA 对应的 CPU 电路（用基础组件搭出的门级实现）
 
-本项目**不处理**这些文件（与电路优化无关）。
+例：`schematics/architecture/Overture/binary_search/new_program.asm`（配套 `.isa` 应位于同目录）
+
+本项目**不优化**架构关卡的电路生成，但**备份逻辑应包含 `.isa` 文件**——否则恢复后会丢失 ISA 定义，`.asm` 无法编译。
 
 ### 1.4 `settings.txt`
 
