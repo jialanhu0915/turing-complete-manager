@@ -2,7 +2,7 @@
 title: 关卡与存档数据
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（2026-08-10 补架构关卡三件套）
+status: 已审（2026-08-10 补 campaign 官方源 + meta.txt + ui.txt 格式）
 ---
 
 # 关卡与存档数据
@@ -149,7 +149,9 @@ E:\SteamLibrary\steamapps\common\Turing Complete\
 
 ### 2.2 `campaign/`
 
-**关卡定义**。每个子目录对应一个关卡，名字与 `levels.txt` 中的 `level_id` 一致。
+**关卡定义**。每个子目录对应一个关卡，目录名（snake_case）与 `levels.txt` 中的 `level_id` 一致。
+
+**官方源**：[`Stuffe/tc_campaign`](https://github.com/Stuffe/tc_campaign) —— 游戏作者维护的主线关卡 Git 仓库，含全部 88 个主线关卡的完整定义文件。是调查 campaign 目录的**权威参考**，比逆向省事得多。
 
 样例：
 ```
@@ -177,13 +179,54 @@ campaign/
 └── ...
 ```
 
-88 个关卡子目录，加上几百个 `.png` / `.cvd.png` 视觉资源。
+88 个关卡子目录，加上几百个 `.png` / `.cvd.png` 视觉资源（关卡插画/位图，可能为全局共享）。
 
-**关卡定义格式未逆向**。猜测：
-- 子目录里有关卡描述文件（JSON / 二进制 / 自定义格式）
-- `.png` 是关卡插画
+**关卡定义格式**（wiki 已校 2026-08-10）—— 每个关卡子目录含 4 个核心文件：
 
-> 留作后续工作：逆向 `campaign/<level_id>/` 内的关卡定义文件，得到「输入 pin 数 / 输出 pin 数 / 测试用例」等元数据。
+| 文件 | 用途 | 格式 |
+|---|---|---|
+| `circuit.data` | 关卡默认布局（含红色不可删除组件、建议组件等） | v13 二进制（详见 [`circuit-data-format.md`](circuit-data-format.md)） |
+| `meta.txt` | 关卡元数据：标题、教程对话、画布尺寸、默认 ISA、默认程序等 | INI-like key-value（§2.2.1） |
+| `ui.txt` | 屏幕底部面板的文字/图片元数据 | 方括号条目（§2.2.2） |
+| `test.si` | 初始化与验证玩家电路的代码 | Simplex DSL（详见 [`compile-signature.md`](compile-signature.md) §test.si API 校对） |
+| `*.png` / `*.cvd.png` | 关卡视觉资源 | — |
+
+#### 2.2.1 `meta.txt` 格式
+
+INI-like key-value 格式（来源 wiki `Custom_level_creation/meta.txt`）：
+
+| 字段 | 必需 | 取值 | 说明 |
+|---|---|---|---|
+| `kind` | 是 | `misc` / `combinational` / `sequential` / `architecture` / `factory` | 关卡类型（**架构关卡对应 `architecture`**） |
+| `size` | 是 | U16 | 画布尺寸 |
+| `title` | 是 | string | 关卡显示名（可与目录名不同，如 `binary_search/` → "Storage Cracker"） |
+| `dialogue` | 是 | multi-line | 教程对话（用 `mentor_centered` / `info` / `overture` 等图片占位符） |
+| `tests` | 否 | int | 测试运行次数 |
+| `tick_past_fail` | 否 | bool | 失败后是否继续 tick |
+| `next_level` | 否 | string | 下一关卡 ID |
+| `components_available` | 否 | int / list | 可用组件清单（-1 = 不限） |
+| `add_components` / `remove_components` | 否 | list | 修改 build 菜单 |
+| `immutable_program` / `immutable_spec` | 否 | bool | 防止玩家编辑默认 `.asm` / `.isa` |
+
+> ⚠️ wiki 标注 "early access 2.0.16 alpha"——稳定版字段可能略有差异。建议与 `Stuffe/tc_campaign` 实测对照。
+
+#### 2.2.2 `ui.txt` 格式
+
+每行一个方括号条目（来源 wiki `Custom_level_creation/ui.txt`）：
+
+```
+[text id="text_id" text="Any text you wish to display" font=mono size=24 align=left x=78 y=90 hidden=true]
+[image id="image_id" file="filename.png" x=78 y=90 hidden=true]
+```
+
+**text** 参数：`id` / `text` / `font`（目前仅 `mono`）/ `size`（24 标准）/ `align`（`left`/`right`，默认 center，相对中心）/ `x`（负值=左）/ `y`（负值=上）/ `hidden`（true 时初始隐藏，test.si 可设为 false）
+
+**image** 参数：`id` / `file` / `x` / `y` / `hidden`
+
+**限制**：
+- 图片必须**编译进游戏文件**；未编译图片会让游戏崩溃
+- 可临时用 `../<other_level>/<file>.png` 路径占位
+- `ui.txt` **不热重载**——改完需重启游戏
 
 ### 2.3 `godot/`
 
