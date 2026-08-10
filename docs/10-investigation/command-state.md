@@ -1,8 +1,8 @@
 ---
 title: 命令与状态枚举
-last_updated: 2026-08-08
+last_updated: 2026-08-10
 scope: investigation
-status: 已审
+status: 已审（2026-08-10 补充 Simplex 端 API wiki 校对）
 ---
 
 # 命令与状态枚举
@@ -221,3 +221,70 @@ type TestResult Enum[pass, win, fail]
 4. 游戏主循环读到 `ctl_command` 后推进 N tick
 5. 完成后回写 `sim_test_result`
 ```
+
+---
+
+## Simplex 端 API（wiki 校对 2026-08-10）
+
+> Wiki 来源：`turingcomplete.wiki/wiki/Custom_level_creation/test.si`（CC BY-SA 4.0）。
+> 以下是 `test.si` 暴露给关卡作者的 Simplex 语言 API 表。
+> 仅记录我们现有 docs 未覆盖或与现有结论交叉的项。
+
+### 钩子（可选函数，组件关卡用）
+
+| 函数 | 触发时机 | 用途 |
+|---|---|---|
+| `on_ui_update(input, output)` | sim 运行时约 30 次/秒 | UI 实时刷新（玩家可见控件） |
+| `on_manual_input(input: Int)` | 玩家操作键盘时 | 键盘输入处理；配合 `add_keyboard_value` |
+
+### 评分与计数
+
+| 函数 | 返回 |
+|---|---|
+| `get_delay_score() Int` | 关卡 delay 总分 |
+| `get_gate_score() Int` | 关卡 gate 总分 |
+| `get_component_count() Int` | 组件总数 |
+| `get_component_count(component_type: ComponentType) Int` | 按类型计数（类型用 `com_*` 内部名） |
+
+### 状态查询
+
+| 函数 | 对应内存 | 说明 |
+|---|---|---|
+| `get_tick() Int` | `settings[sim_tick]` | 当前 tick |
+| `get_test() Int` | — | 当前测试编号 |
+| `get_last_time() Int` | — | 最后一次执行时间 |
+
+### 内存访问（RAM）
+
+| 函数 | 用途 |
+|---|---|
+| `get_memory(label: String) Int` | 按 label 取 RAM 基址 |
+| `get_ram_value(label: String, address: Int, size: @Size) @Size` | 读 RAM 值（按位宽 `@Size`） |
+| `set_ram_value(label: String, offset: Int, value: @Type)` | 写 RAM 值 |
+
+### 键盘事件注入
+
+| 函数 | 用途 |
+|---|---|
+| `add_keyboard_value(key_down: Bool, value: U8)` | 推键盘事件进队列 |
+
+### UI 与错误
+
+| 函数 | 用途 |
+|---|---|
+| `set_error(input: String)` | 显示黄色错误消息 |
+| `ui_set_*`（多个） | UI 自定义（具体名称 wiki 未列全） |
+
+### 架构关卡独立 API（盲区）
+
+| 函数 | 替代 |
+|---|---|
+| `arch_check_output(test: Int, input: Int, output: Int) TestResult` | 替代 `check_output`（组件关卡） |
+| `arch_get_input(test: Int) Int` | 替代 `get_input`（组件关卡） |
+
+签名形态不同（用 `Int` 而非结构体），多一个 `test` 参数。详见 [`architecture-levels.md`](architecture-levels.md)。
+
+### 类型 → 字段映射规则
+
+- **Input**：每个输入引脚一个字段；**非字母数字字符替换为下划线**（如 `Carry in` → `carry_in`）
+- **Output**：每个输出引脚**占两个字段**（值 + `_is_z` Z 状态标记）—— 详见 [`compile-signature.md`](compile-signature.md) §test.si API 校对
