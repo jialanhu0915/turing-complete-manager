@@ -2,7 +2,7 @@
 title: circuit.data 二进制格式
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（Stuffe/save_monger 官方 codec 校对后修订）
+status: 已审（Stuffe/save_monger 官方 codec + 完整 ComponentKind 枚举已校对）
 ---
 
 # `circuit.data` 二进制格式
@@ -67,19 +67,21 @@ status: 已审（Stuffe/save_monger 官方 codec 校对后修订）
 
 ### Component
 
+> 所有类型标注基于 save_monger `common.nim` 序列化原语。`Bits`/`Bytes` 是 Nim 强类型包装（围绕 `int`），**二进制上就是 i64**——不是压缩编码。
+
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `kind` | u16 | ComponentType 枚举值（见下） |
-| `position` | (i16, i16) | (x, y) 坐标 |
+| `kind` | u16 | `ComponentKind` 枚举 ordinal（0..124，详见 §ComponentType 枚举） |
+| `position` | i16 + i16 | (x, y) 坐标 |
 | `rotation` | u8 | 旋转（0-3） |
 | `permanent_id` | i64 | 唯一 ID（玩家拖动不会变） |
 | `user_label` | u16-len + UTF-8 | 玩家给的标签（"Input"等） |
 | `custom_string` | u16-len + UTF-8 | 自定义字符串 |
 | `settings` | u16 count + u64[] | 组件配置参数 |
-| `buffer_size` | i64 | RAM 缓冲大小 |
+| `buffer_size` | **i64** | RAM 缓冲字节数（`Bytes` 包装器的 amount） |
 | `ui_order` | i16 | UI 显示顺序 |
-| `word_size` | i64 | 字长（位） |
-| `immutable` | bool | 不可变（关卡定义用） |
+| `word_size` | **i64** | 字长（位）（`Bits` 包装器的 amount） |
+| `is_immutable` | bool | 不可变（关卡定义用） |
 | `cost_gate` | i64 | 此组件门数（`min_gate` sentinel 时为 -1） |
 | `cost_delay` | i64 | 此组件延迟（`min_delay` sentinel 时为 -1） |
 
@@ -87,13 +89,14 @@ status: 已审（Stuffe/save_monger 官方 codec 校对后修订）
 > - `cvk_min_gate`：写 `(-1, 0)` —— cost 取最小门数
 > - `cvk_min_delay`：写 `(0, -1)` —— cost 取最小延迟
 > - `cvk_explicit`：写 `(gate, delay)` —— 显式给两个数
-| `little_endian` | bool | 字节序 |
-| `init_data` | u8 | 初始数据 |
-| `linked_components` | u16 count + 5-tuples | 关联组件（多态端口） |
+
+| `is_little_endian` | bool | 字节序（仅 RAM 类组件相关） |
+| `init_data` | **u8** | `InitialDataKind` enum ordinal（`ini_zeroes`=0 / `ini_assembler`=1 / `ini_punch_card`=2 / `ini_file`=3 / `ini_hex_editor`=4 / `ini_persistent`=5） |
+| `linked_components` | u16 count + **(i64, i64, string, i64, i64)** 5 元组 | 关联组件（多态端口）—— `(permanent_id, inner_id, name, offset, word_size)`，最后 `word_size` 是 i64 |
 | `selected_programs` | u16 count + (string, string) | 架构关卡 (level, program.value) **Map** 配对引用——按 level 名索引（save_monger.nim 是 Table 迭代，顺序不固定） |
 | **条件字段**（kind == 78）： |
 | `custom_id` | i64 | 自定义元件 ID |
-| `custom_word_sizes` | u16 count + (i64, i64) | 自定义字长 |
+| `custom_word_sizes` | u16 count + **(i64, i64)** | 自定义字长（`(permanent_id, bits_amount)`，第二个字段是 i64） |
 
 ### Wire
 
@@ -101,29 +104,54 @@ status: 已审（Stuffe/save_monger 官方 codec 校对后修订）
 |---|---|---|
 | `color` | u8 | 颜色 ID |
 | `comment` | u16-len + UTF-8 | 玩家注释 |
-| `start` | (i16, i16) | 起点 |
-| `segments` | u16 循环（length=0 结束） | 路径段，bits 13-15=direction, bits 0-12=length |
+| `start` | i16 + i16 | 起点坐标（`add_point` 写入） |
+| `segments` | u16 循环（length=0 结束） | 每段编码：`bits 13-15` = direction (0-7，`DIRECTIONS` 数组索引)、`bits 0-12` = length (1..8191)。以 `length=0` 的 u16 终止 |
 
 ---
 
-## ComponentType 枚举（实测样本）
+## ComponentType 枚举（save_monger 权威）
 
-实测几个简单关卡，验证 `replay.nim` 里的枚举顺序：
+完整枚举在 save_monger `common.nim` 第 9-134 行——**官方权威**，125 个 slot（0..124），其中 101 active + 24 `com_deleted_*`（保留版本兼容性）。
 
-| 关卡 | kind | 推测 |
-|---|---|---|
-| `and_gate` 的 XOR 门 | 6 | com_xor_bit（实际枚举第 6）|
-| `not_gate` 的 XOR 门 | 6 | com_xor_bit |
-| `or_gate` 的 OR 门 | 3 | **com_or_bit** ✓ 与 ComponentType 枚举一致 |
-| `full_adder` Sum/Carry 输出 | 69 | 特殊输出类型 |
-
-**已知 kind 集合**（按 `tc-save-lab/scaffold.py`）：
+**已知 kind 集合**：
 
 ```python
-LEVEL_INPUT_KINDS  = frozenset({60, 61, 62, 63, 64, 65, 106})
-LEVEL_OUTPUT_KINDS = frozenset({40, 58, 68, 69, 70, 73, 74, 75, 77})
+LEVEL_INPUT_KINDS  = frozenset({60, 61, 62, 63, 64, 65, 106})  # 6 个 1-4pin + word + switched + cc_level_input
+LEVEL_OUTPUT_KINDS = frozenset({40, 58, 68, 69, 70, 73, 74, 75, 77})  # 1/2/3/4/8_pin + word + switched + counter + cc_level_output
 CUSTOM_COMPONENT_KIND = 78
+ARCHITECTURE_KINDS = {62, 70}  # com_level_input_switched + com_level_output_switched —— 架构关卡就这 2 个 kind
 ```
+
+**关键 ordinal 速查**：
+
+| ordinal | 名称 |
+|---|---|
+| 3 | `com_not_bit` |
+| 4 | `com_and_bit` |
+| 6 | `com_nand_bit` |
+| 7 | `com_or_bit` |
+| 10 | `com_xor_bit` |
+| 11 | `com_xnor_bit` |
+| 42 | `com_mux` |
+| 78 | `com_custom` |
+| 106 | `com_cc_level_input` |
+| **118** | **`com_ram`** —— 唯一 `ASSEMBLER_MEMORY` |
+
+**实测样本**（前版多处 mislabel 已更正）：
+
+| 关卡 | kind | 官方枚举 | 备注 |
+|---|---|---|---|
+| `not_gate` 的输入 pin | 60 | `com_level_input_1_pin` | 1-pin input |
+| `and_gate` / `or_gate` 的输入 pin | 63 | `com_level_input_2_pin` | 2-pin input |
+| 多数关卡的输出 pin | 68 | `com_level_output_1_pin` | 1-pin output |
+| `full_adder` Sum/Carry 输出 | 69 | `com_level_output_word` | N-bit 可配置 |
+| `or_gate` 的 OR 门 | **7** | `com_or_bit` | **前版误标 3（com_not_bit）** |
+| `or_gate` 的 NOT 门 | 3 | `com_not_bit` | 前版"OR 门"实际是 NOT |
+| `and_gate` 的 AND 门 | 4 | `com_and_bit` | **前版未列出** |
+| `and_gate` 的 NAND 门 | **6** | `com_nand_bit` | **前版误标为 com_xor_bit** |
+| `xor_gate` 的 XOR 门 | 10 | `com_xor_bit` | 官方枚举确认 |
+
+> ✅ **门类 kind 已全部确认**——save_monger 枚举权威映射可用，前版"门类未系统逆向"警示已解除。
 
 ---
 

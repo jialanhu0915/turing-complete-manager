@@ -2,16 +2,80 @@
 title: ComponentType 组件目录
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（2026-08-10 补充 wiki Components 索引 + 引脚信息 + alpha 变更摘要）
+status: 已审（Stuffe/save_monger 完整 ComponentKind 枚举已校对）
 ---
 
 # ComponentType 组件目录
 
-Turing Complete 仿真器支持 **101 种电路组件**（`com_*`）。
+Turing Complete 仿真器支持 **101 种电路组件**（`com_*`），ordinal 范围 0..124（其中 24 个 `com_deleted_*` 为版本兼容性保留位）。
 
-数据来源：从 `E:\SteamLibrary\steamapps\common\Turing Complete\replay.nim` 中 grep `com_[a-z_0-9]+`，统计去重得到。
+**数据来源**：
 
-> ComponentType 是 `replay.nim` 嵌入代码里的枚举，**枚举顺序固定**（与 `#COUNTS` 数组下标一一对应）。
+1. 权威源：[`Stuffe/save_monger` `common.nim`](https://github.com/Stuffe/save_monger/blob/master/common.nim) 第 9-134 行的 `ComponentKind` 枚举——**官方完整枚举**，含每个 ordinal 对应的组件名
+2. 交叉源：`E:\SteamLibrary\steamapps\common\Turing Complete\replay.nim` 中 grep `com_[a-z_0-9]+`——确认名称列表一致
+
+> ComponentType 是 save_monger 与 replay.nim 共用的枚举，**枚举顺序固定**（与 `#COUNTS` 数组下标一一对应）。
+
+### 关键 ordinal 速查表
+
+| ordinal | 名称 | 说明 |
+|---|---|---|
+| 0 | `com_none` | 空 |
+| 1-2 | `com_off`, `com_on` | 常量 |
+| 3-7 | `com_not_bit`, `com_and_bit`, `com_and_3_bit`, `com_nand_bit`, `com_or_bit` | 1-bit 基础门（前 5 个） |
+| 8-12 | `com_or_3_bit`, `com_nor_bit`, `com_xor_bit`, `com_xnor_bit`, `com_switch_bit` | 1-bit 基础门（后 5 个） |
+| 13 | `com_delay_line_bit` | 1-bit 延迟线 |
+| 14 | `com_register_bit` | 1-bit 寄存器 |
+| 15 | `com_full_adder` | 全加器 |
+| 16-17 | `com_maker_bit_8`, `com_splitter_bit_8` | 8-bit 合并/拆分 |
+| 18-25 | 字级门（`com_not_word`, `com_or_word`, ..., `com_switch_word`） | 8 入口 |
+| 26-32 | 比较+算术（`com_equal`, `com_less_u`, `com_less_s`, `com_neg`, `com_add`, `com_mul`, `com_div`） | 7 入口 |
+| 33-37 | 移位（`com_lsl`, `com_lsr`, `com_rol`, `com_ror`, `com_asr`） | 5 入口 |
+| 38-39 | `com_counter`, `com_register_word` | 计数+字级寄存器 |
+| 40 | `com_level_output_8_pin` | 8-pin 输出 |
+| 41 | `com_level_delay_gate` | 关卡定义延迟门 |
+| **42** | **`com_mux`** | **多路复用器** |
+| 43-45 | `com_decoder_1/2/3` | 解码器 |
+| 46 | `com_constant` | 常量输出 |
+| 47-50 | `com_splitter_word_2`, `com_maker_word_2`, `com_clz`, `com_register_word_config` | 字级拆分+CLZ+可配置寄存器 |
+| 51-57 | `com_probe_wire_asm`, `com_push_button`, `com_pipelined_load_port`, `com_load_port`, `com_delay_line_word`, `com_store_port`, `com_ctz` | 端口+按钮+计数辅助 |
+| 58 | `com_cc_level_output` | cc 总线关卡输出 |
+| 59 | `com_level_gate` | 关卡门输出 |
+| 60-65 | `com_level_input_1_pin` ... `com_level_input_4_pin` (60/63/64/65) + `com_level_input_word` (61) + `com_level_input_switched` (62) | 关卡输入族 |
+| 66-67 | `com_deleted_16`, `com_deleted_17` | 保留位 |
+| 68-70 | `com_level_output_1_pin`, `com_level_output_word`, `com_level_output_switched` | 关卡输出族（前 3） |
+| 71-72 | `com_deleted_2`, `com_deleted_3` | 保留位 |
+| 73-75 | `com_level_output_2_pin`, `com_level_output_3_pin`, `com_level_output_4_pin` | 关卡输出族 |
+| 76 | `com_deleted_18` | 保留位 |
+| 77 | `com_level_output_counter` | 计数器型输出 |
+| **78** | **`com_custom`** | **自定义元件** |
+| 79-81 | `com_cc_input`, `com_cc_input_buffer`, `com_cc_output` | cc 总线族 |
+| 82-85 | `com_probe_memory_bit`, `com_probe_memory_word`, `com_probe_wire_bit`, `com_probe_wire_word` | probe 族 |
+| 86 | `com_deleted_20` | 保留位 |
+| 87 | `com_halt` | 暂停 |
+| 88 | `com_deleted_1` | 保留位 |
+| 89 | `com_segment_display` | 段码显示 |
+| 90-96 | `com_static_value`, `com_screen`, `com_time`, `com_keyboard`, `com_static_eval`, `com_verilog_input`, `com_verilog_output` | 静态值 + 显示 + 外部 I/O |
+| 97-100 | `com_maker_word_4/8`, `com_splitter_word_4/8` | 字级 4/8-bit 合并/拆分 |
+| 101 | `com_static_indexer` | 静态索引 |
+| 102-103 | `com_deleted_7`, `com_deleted_8` | 保留位 |
+| 104 | `com_inc` | 自增 |
+| 105 | `com_deleted_19` | 保留位 |
+| **106** | **`com_cc_level_input`** | **cc 总线关卡输入**（架构关卡用） |
+| 107 | `com_deleted_9` | 保留位 |
+| 108 | `com_mod` | 取模 |
+| 109-113 | `com_splitter_bit_2/4`, `com_maker_bit_2/4` + `com_deleted_10` | bit 合并/拆分 |
+| 114-119 | `com_concatenator_2/4/8`, `com_static_indexer_config`, **`com_ram`** (118), `com_delay_line_word_config` | 连接器 + 索引器 + **RAM** + 可配置延迟线 |
+| 120-124 | `com_deleted_11..15` | 保留位 |
+
+**关键集合**（save_monger `common.nim` 常量定义）：
+
+- `UNUSED_COMPONENTS` = 24 个 deleted slot
+- `LEVEL_INPUTS` = {60, 61, 62, 63, 64, 65} = 1/2/3/4_pin + word + switched
+- `LEVEL_OUTPUTS` = {40, 68, 69, 70, 73, 74, 75, 77} = 1/2/3/4/8_pin + word + switched + counter
+- `ARCHITECTURE_KINDS` = {62, 70} = com_level_input_switched + com_level_output_switched ——**架构关卡就这 2 个 kind**
+- `ASSEMBLER_MEMORY` = {118} = **com_ram 是唯一汇编器存储**
+- `MIN_ONE_WATCHED_COMPONENT` = {82, 83, 91} = probe_memory_bit + probe_memory_word + screen
 
 ---
 
