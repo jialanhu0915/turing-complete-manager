@@ -1,8 +1,8 @@
 ---
 title: circuit.data 二进制格式
-last_updated: 2026-08-08
+last_updated: 2026-08-10
 scope: investigation
-status: 已审（外部参考实现确认）
+status: 已审（Stuffe/save_monger 官方 codec 校对后修订）
 ---
 
 # `circuit.data` 二进制格式
@@ -80,12 +80,17 @@ status: 已审（外部参考实现确认）
 | `ui_order` | i16 | UI 显示顺序 |
 | `word_size` | i64 | 字长（位） |
 | `immutable` | bool | 不可变（关卡定义用） |
-| `cost_gate` | i64 | 此组件门数 |
-| `cost_delay` | i64 | 此组件延迟 |
+| `cost_gate` | i64 | 此组件门数（`min_gate` sentinel 时为 -1） |
+| `cost_delay` | i64 | 此组件延迟（`min_delay` sentinel 时为 -1） |
+
+> save_monger.nim 揭示实际是**三种 `cost_variant` 变体**（写入两个 i64）：
+> - `cvk_min_gate`：写 `(-1, 0)` —— cost 取最小门数
+> - `cvk_min_delay`：写 `(0, -1)` —— cost 取最小延迟
+> - `cvk_explicit`：写 `(gate, delay)` —— 显式给两个数
 | `little_endian` | bool | 字节序 |
 | `init_data` | u8 | 初始数据 |
 | `linked_components` | u16 count + 5-tuples | 关联组件（多态端口） |
-| `selected_programs` | u16 count + (string, string) | 架构关卡程序引用 |
+| `selected_programs` | u16 count + (string, string) | 架构关卡 (level, program.value) **Map** 配对引用——按 level 名索引（save_monger.nim 是 Table 迭代，顺序不固定） |
 | **条件字段**（kind == 78）： |
 | `custom_id` | i64 | 自定义元件 ID |
 | `custom_word_sizes` | u16 count + (i64, i64) | 自定义字长 |
@@ -188,6 +193,27 @@ CUSTOM_COMPONENT_KIND = 78
 - ❌ LLM 集成（生成候选）
 - ❌ Campaign v13/v14 的写（只读）
 
+### `Stuffe/save_monger`（**官方 Nim codec**，CC0）
+
+[github.com/Stuffe/save_monger](https://github.com/Stuffe/save_monger) —— **游戏作者 Stuffe 公开的官方存档读写代码**。Stuffe 确认是游戏开发者，故此为**最权威参考**（优于 Python 逆向）。
+
+- **License**：CC0（公共领域），仅 SuperSnappy 依赖是 MIT
+- **完整版本支持**：v0..v15 全部实现（含本项目关注的 v13 / v15）
+- **Rust 移植**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger)（Credit: danielrab）—— **可直接当 Cargo 依赖用**
+
+**关键二进制细节**（已校对 `save_monger.nim` 源码，对照本文档前版有偏差）：
+
+| 项 | save_monger 实际编码 | 与本文档前版差异 |
+|---|---|---|
+| `selected_programs` | **Map** 按 level 名索引，不是有序 List | 前版未明说 Map |
+| `cost_variant` | 三种 sentinel：`min_gate` = (-1, 0) / `min_delay` = (0, -1) / `explicit` = (gate, delay) | 前版只识别 explicit |
+| `word_size` / `init_data` / `sync_state` / `path` | **特殊编码**（详见 `serialize.nim`） | 前版未识别 |
+| 顶级 `dependencies` | `seq[int]`（自定义长度前缀，非固定 u16） | 前版写 `u16 + i64[]` |
+| 顶级 `score` 槽位 | `u16` 占位字段，注释 "Eventually used for architecture score"，**当前固定为 0** | 前版未明确是占位 |
+| Snappy 压缩 | `LATEST_VERSION & compress(res)`（版本字节 + Snappy） | ✓ 与前版一致 |
+
+**Windows 文件锁处理**（`open_when_ready`）：retry 5000 次，每次 sleep 1ms——直接影响 `src-tauri/src/backup.rs` 的存档读写流程。
+
 ---
 
 ## 我们 CLI 要做的事（基于参考实现）
@@ -211,12 +237,26 @@ v13/v14 codec (读)  ──┤
 ### ~~W-1 完整 schema 逆向~~ ✅ 已由 tc-save-lab 完成
 直接采用 `tc-save-lab/codec.py` 的实现（或移植到 Rust）。
 
-### W-2. 移植到 Rust / 集成进 Tauri app
-- `binary.py` → 用 `byteorder` crate 重写（小端序 reader/writer）
-- `snappy.py` → 用 `snap` crate（pure Rust Snappy）
-- `model.py` → `serde` 派生 `Circuit`/`Component`/`Wire`
-- 入口：`src-tauri/src/circuit/` 模块
-- 共享给 CLI（`src-tauri/src/bin/tcc.rs`）
+### W-2. ~~移植到 Rust~~ → 改用 `tc_save_monger` crate（推荐）
+
+⚠️ **重大变更**：发现 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) —— Stuffe/save_monger（CC0）的 Rust 移植版，**可直接作为 Cargo 依赖**。比原计划（自己逆向 + 实现 codec）省数月工作量，且行为与官方一致。
+
+```toml
+[dependencies]
+tc_save_monger = "..."
+```
+
+**优势**：
+- 与官方 Nim 版本行为一致（含 16 个版本的解析逻辑 v0..v15）
+- CC0 + Rust port，license 兼容
+- 已有 Snappy 解压、binary reader/writer、版本分发逻辑
+
+**旧 W-2 计划作废**：不再需要以下手工实现：
+- ~~`binary.py` → `byteorder` crate~~
+- ~~`snappy.py` → `snap` crate~~
+- ~~`model.py` → `serde` 派生 `Circuit`/`Component`/`Wire`~~
+
+入口：`src-tauri/src/circuit/` 直接调用 crate API。
 
 ### W-3. 注入机制（D-7）—— 让游戏加载我们的电路
 - ~~改 `levels.txt`~~ 已排除

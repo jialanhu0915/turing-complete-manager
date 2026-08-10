@@ -2,7 +2,7 @@
 title: 架构关卡（Architecture Levels）
 last_updated: 2026-08-10
 scope: investigation
-status: 初稿（基于 wiki 校对，未逆向游戏本体）
+status: 初稿（wiki + Stuffe/isa_spec 校对）
 ---
 
 # 架构关卡（Architecture Levels）
@@ -91,6 +91,22 @@ fn arch_get_input(test: Int) Int
 - 编译时断言（compile-time assertions）
 
 **未逆向**：`.isa` 文件的具体语法（BNF）、`.asm` 文件的指令编码与操作数序列化。
+
+### 权威实现：Stuffe/isa_spec
+
+[github.com/Stuffe/isa_spec](https://github.com/Stuffe/isa_spec)（Nim + Assembly，**MIT**）—— 配套的 ISA 规范处理器实现。**MIT 许可**，可自由参考实现细节。本地已 clone 到 `reference/isa_spec/`。
+
+- 完整 BNF 见 [`reference/isa_spec/README.md`](../../reference/isa_spec/README.md)（89 行）
+- 完整数据模型见 [`reference/isa_spec/types.nim`](../../reference/isa_spec/types.nim)（502 行）：`FieldKind`、`BitFieldKind`、`OperandType`、`InstructionDebranched`/`Unbranched` 等
+
+**比 wiki 更详细的项**：
+
+- **`IsaSpec` 完整字段**：name / variant / **line_comments** / **block_comments** / **endianness** (`end_big` / `end_little`) / **code_alignment** / field_types / instructions / **patterns** / **instruction_decoders**
+- **`FieldKind` 范围**：126 个 var槽 (`fk_var_0..fk_var_125`) + `fk_label` + `fk_imm_0` + `fk_uimm_1..64` + `fk_simm_1..64`——最多 126 个操作数 + label + 0/1..64 位有/无符号立即数
+- **`BitFieldKind` 范围**：252 个 var 槽 (`bfk_var_0..bfk_var_251`) + `bfk_zero` / `bfk_one` / `bfk_wildcard` / `bfk_invalid`
+- **`SyntaxKind`**：sk_fixed / sk_field / sk_pattern / **sk_any_number_of_spaces** / **sk_at_least_one_space**——语法段里空格是通配
+- **`InstructionUnbranched`** 支持**分块条件指令**（`chunks: seq[InstructionBranch]`，每个 chunk 有自己的位模式 + 条件表达式）—— `debranch()` 生成所有组合
+- **`OperandType`** 三种：`otk_normal`（普通字段引用）/ `otk_virtual`（运行时计算的虚拟操作数）/ `otk_pattern`（参数化模式）
 
 ### Spec.isa 语法片段（wiki 实测）
 
