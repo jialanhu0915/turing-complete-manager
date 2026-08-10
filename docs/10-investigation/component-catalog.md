@@ -1,8 +1,8 @@
 ---
 title: ComponentType 组件目录
-last_updated: 2026-08-08
+last_updated: 2026-08-10
 scope: investigation
-status: 已审
+status: 已审（2026-08-10 补充 wiki Components 索引校对）
 ---
 
 # ComponentType 组件目录
@@ -267,3 +267,61 @@ CUSTOM_COMPONENT_KIND = 78
 - **生成新电路** → 修改 `#COUNTS` 后重新生成 `compile_and_run` 块
 
 但再次提醒：**实际电路拓扑（门的连接关系）不在 `replay.nim` 里**，而在 `circuit.data` 中。ComponentType 计数只是「统计」信息。
+
+---
+
+## wiki 校对（2026-08-10）
+
+> Wiki 来源：`turingcomplete.wiki/wiki/Components`（CC BY-SA 4.0）。
+
+### Sandbox-only 子类
+
+wiki 显式标注下列组件**仅 sandbox 可用**（不在普通关卡）：
+
+- File Loader（文件加载）
+- Keyboard（键盘输入）
+- Network（网络）
+- Time（时间源）
+
+本表中对应：
+
+| wiki 名 | 本表 enum | 备注 |
+|---|---|---|
+| Keyboard | `com_keyboard` | ✓ |
+| Time | `com_time` | ✓ |
+| File Loader | — | 未找到 `com_file_loader`，可能用其他机制实现 |
+| Network | — | 未找到 `com_network`，可能用其他机制实现 |
+
+### 位宽分类（wiki 视角）
+
+wiki 按**位宽**组织，与本表"按功能"分类互为补充视图：
+
+| 位宽类 | 内容 | 与本表对应 |
+|---|---|---|
+| 1-bit | 基础门 + 1-bit 解码器/全加器/延迟线 | §一 §四 §九 §十 |
+| 8-bit | 字级门 + 算术 + 移位 + 旋转 | §二 §三 §五 |
+| 16/32/64-bit | 同 8-bit，通过 `word_size` 参数区分 | 同上（同一 enum） |
+| IO | HDD / Program / Halt / Sound / Configurable delay / Indexer | §十 §十二 §十五 |
+| RAM 子类 | RAM / ROM / Dual Load / Fast / Latency | §十（仅 `com_ram`） |
+| Level 子类 | Level output / Level input / Level Screen | §十一 §十二 |
+| Probe 子类 | Memory/Wire × bit/word | §十三 |
+| Display 子类 | Dot Matrix / 7-Segment / Console / Sprite | §十二 |
+| Sandbox only | File Loader / Keyboard / Network / Time | §十五 |
+
+### 计数差异
+
+- **本表**：101 项（`replay.nim` grep `com_[a-z_0-9]+`）
+- **wiki**：~74 个去重名字（不区分 16/32/64-bit 变体）
+
+差异来源推测（**待确认**）：
+
+- 本表可能包含 alpha-branch 变体或内部 enum（wiki 主线页未覆盖）
+- wiki 一些条目**不是独立 ComponentType**，而是 `com_ram` 或 `com_custom` 的配置变体：
+  - **HDD / Sound / Console** — 未在本表找到对应 enum，可能通过 `com_custom`（用户脚本）实现
+  - **ROM / Dual Load RAM / Fast RAM / Latency RAM** — 可能都是 `com_ram` 的配置变体（buffer_size / settings 不同）
+
+**验证方法**：grep 这些名字到 `replay.nim`，看是否存在独立 `com_*` 标识。
+
+### 富描述来源
+
+wiki 每个组件名链到一个独立页面（`Component/<NAME>`），含 pin 图、用法、限制，约 70+ 个页面。本表当前**只有名字和功能**——若要给 LLM/玩家提供 pin 图，需批量抓取 wiki Component 页。

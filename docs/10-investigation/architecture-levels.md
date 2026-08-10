@@ -92,6 +92,28 @@ fn arch_get_input(test: Int) Int
 
 **未逆向**：`.isa` 文件的具体语法（BNF）、`.asm` 文件的指令编码与操作数序列化。
 
+### Spec.isa 语法片段（wiki 实测）
+
+具体语法要素（抓取 `Components` 与 `Spec.isa` 页交叉确认）：
+
+- 操作数前缀 `%`（如 `%r0`）
+- 编译时断言：`!assert ...`
+- 字段定义 `name value` 模式（如 `r0 000`、`r1 001`——name 是字段名，value 是二进制位模式）
+- 表达式：`+`, `-`, `*`, `/`, `&`, `|`, `^`, `<<`, `>>`
+- 内建函数：`asr`, `log2`, `popcount`, `trailing_zeros`
+- 位切片（bit slicing）：`field[start:end]` 形式
+- 指令地址变量：`$start`, `$end`
+
+指令定义支持：
+
+- 字面量匹配（指令编码直接给二进制位）
+- 字段引用（通过字段名引用 Fields 段定义的位模式）
+- 两者可混合
+
+**位提取常用掩码**：通过 AND + 移位从指令字中提取子字段。具体掩码值由 ISA 设计者在 Fields 段定义。
+
+完整的指令格式定义需抓取 `?action=raw` 原始 wikitext 进一步解析（本次抓取被模型拒绝原样返回，仅提取要素）。
+
 ---
 
 ## 五、与现有 docs 的关系
