@@ -143,7 +143,7 @@ LLM 集成           ❌ 同上                                🆕（D-5，可�
 ✅ W-2 (Rust 移植 codec)                ← 已废止，改用 tc_save_monger crate
 ✅ D-6 (campaign 解析)                  ← Stuffe/save_monger + tc-save-lab 已完成
    ↓
-🆕 Cargo.toml: 加 `tc_save_monger = "..."`  ← 直接用 Rust crate（省 W-2）
+🆕 Cargo.toml: 加 `tc_save_monger = "0.4.5"`  ← MIT 直接用（省 W-2）
    ↓
 D-1 (compile.dll 函数签名调研)         ← IDA/Ghidra strings + 试探调用
    ↓

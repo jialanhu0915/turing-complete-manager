@@ -267,17 +267,33 @@ v13/v14 codec (读)  ──┤
 
 ### W-2. ~~移植到 Rust~~ → 改用 `tc_save_monger` crate（推荐）
 
-⚠️ **重大变更**：发现 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) —— Stuffe/save_monger（CC0）的 Rust 移植版，**可直接作为 Cargo 依赖**。比原计划（自己逆向 + 实现 codec）省数月工作量，且行为与官方一致。
+⚠️ **重大变更**：发现 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) —— Stuffe/save_monger 的 Rust 移植版（**MIT**，Credit: danielrab），**可直接作为 Cargo 依赖**。比原计划（自己逆向 + 实现 codec）省数月工作量，且行为与官方一致。
 
 ```toml
 [dependencies]
-tc_save_monger = "..."
+tc_save_monger = "0.4.5"
 ```
+
+**API 表面**（v0.4.5，docs.rs **0% 有文档**——集成时需自看源码）：
+
+```rust
+pub fn parse<'a>(bytes: Vec<u8>) -> Circuit<'a>  // 唯一公开函数，零拷贝借用
+// Circuit<'a> 包含 5 structs + 3 enums：
+//   Circuit, Component, Header, Point, Wire
+//   ComponentKind, SyncState, WireKind
+```
+
+**依赖**：仅 `snap ^1.0.5`（Snappy 解压）
 
 **优势**：
 - 与官方 Nim 版本行为一致（含 16 个版本的解析逻辑 v0..v15）
-- CC0 + Rust port，license 兼容
-- 已有 Snappy 解压、binary reader/writer、版本分发逻辑
+- **MIT** + Rust port，license 极宽松
+- 零拷贝设计（`Circuit<'a>` 借用输入 `bytes`）
+- API 极简（1 函数 + 5 struct + 3 enum）
+
+**注意事项**：
+- `parse` 返回 `Circuit<'a>`，**无 Result**——错误处理可能 panic 或返回不完整 Circuit
+- docs.rs 上 0% 有 rustdoc 注释，使用前需读 `src/tc_save_monger/lib.rs` 源码
 
 **旧 W-2 计划作废**：不再需要以下手工实现：
 - ~~`binary.py` → `byteorder` crate~~
