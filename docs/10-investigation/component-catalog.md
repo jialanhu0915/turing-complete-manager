@@ -2,7 +2,7 @@
 title: ComponentType 组件目录
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（2026-08-10 补充 wiki Components 索引校对）
+status: 已审（2026-08-10 补充 wiki Components 索引 + 引脚信息校对）
 ---
 
 # ComponentType 组件目录
@@ -325,3 +325,64 @@ wiki 按**位宽**组织，与本表"按功能"分类互为补充视图：
 ### 富描述来源
 
 wiki 每个组件名链到一个独立页面（`Component/<NAME>`），含 pin 图、用法、限制，约 70+ 个页面。本表当前**只有名字和功能**——若要给 LLM/玩家提供 pin 图，需批量抓取 wiki Component 页。
+
+### 引脚信息（wiki 校对 2026-08-10）
+
+下述 4 个组件已有 wiki 完整引脚图与真值表：
+
+#### `Register`（com_register_word, com_register_bit）
+
+| 项 | 内容 |
+|---|---|
+| Inputs | 3：**Load**、**Save**、**Save Value** |
+| Output | 1 |
+| 位宽 | 8 / 16 / 32 / 64（word）；1（bit） |
+| Load=1 | 输出当前存储值 |
+| Load=0 | 输出无值 |
+| Save=1 | 写入 Save Value 到存储 |
+| Save=0 | 不写入 |
+| 解锁 | 8-bit: Saving Bytes；16/32/64: Lab |
+
+#### `Mux`（com_mux）
+
+| 项 | 内容 |
+|---|---|
+| Inputs | 3：**select**（1-bit）+ **input1**（位宽）+ **input2**（位宽） |
+| Output | 1（位宽） |
+| select=0 | 输出 input1 |
+| select=1 | 输出 input2 |
+| 解锁 | 8-bit: Input Selector；16/32/64: Lab |
+
+#### `Delay Line`（com_delay_line_bit, com_delay_line_word, ...）
+
+| 项 | 内容 |
+|---|---|
+| Inputs | 1 |
+| Output | 1 |
+| 位宽 | 1 / N（word） |
+| 行为 | 输出 = 输入延迟 1 tick（恰好） |
+| 地位 | 几乎所有 bit/byte 存储组件的基础构件 |
+| 解锁 | Delayed Lines |
+
+#### `Switch`（com_switch_bit）
+
+| 项 | 内容 |
+|---|---|
+| Inputs | 2：**input**、**enable** |
+| Output | 1 |
+| enable=0 | 输出 Z（高阻） |
+| enable=1 | 输出 input 值 |
+| 解锁 | Bit Switch |
+
+**真值表**：
+
+| Input | Enable | Output |
+|---|---|---|
+| 0 | 0 | Z |
+| 0 | 1 | 0 |
+| 1 | 0 | Z |
+| 1 | 1 | 1 |
+
+> ⚠️ Switch 的 Z 行为与 [`compile-signature.md`](compile-signature.md) §test.si API 校对中的 `Output._is_z` 直接对应——未驱动的输出会被标记为 Z 状态。这是 LLM 生成电路时必须显式处理的悬空信号。
+
+wiki 上其他组件页（RAM/ROM/Probe 等）的引脚信息尚未抓取，若需要可批量补充。

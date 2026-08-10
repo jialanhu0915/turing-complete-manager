@@ -228,6 +228,27 @@ INI-like key-value 格式（来源 wiki `Custom_level_creation/meta.txt`）：
 - 可临时用 `../<other_level>/<file>.png` 路径占位
 - `ui.txt` **不热重载**——改完需重启游戏
 
+#### 2.2.3 把关卡放入地图
+
+（来源 wiki `Custom_level_creation/Adding_your_level_to_the_map`）
+
+关卡做好后，要在游戏主菜单的**世界地图**上看到它，需要额外步骤：
+
+1. 在主菜单**打开游戏控制台**（左上汉堡菜单 `☰` + 按 `q`）
+2. 控制台输入 `dev_mode on` —— 启用 level map 上的"Level component"菜单与所有组件
+3. 放置 **Level component**：粉红 pin 是输入，红色 pin 是输出；旋转至锁图标方向正确
+4. 选中组件，在底部面板的 Level 文本框编辑关卡名（默认显示 `Level ' 'not found`）
+5. 用导线连接到上一个关卡（或其他能给出 ON 信号的组件，如 Constant ON）—— 收到 ON 信号后状态变黄（可用但未通关）
+6. 控制台输入 `save_level` —— **覆盖 `campaign/main/circuit.data`**
+7. 完成更新后控制台输入 `dev_mode off`（dev_mode 开启时无法直接从地图加载关卡，要用底部面板的 Load 按钮）
+
+**重要警告**：
+
+- `circuit.data` 是**二进制文件**，无法自动 merge
+- 任意游戏更新 / Steam `Verify Files` 会用默认地图覆盖你的修改
+- **务必备份 `campaign/main/`** 目录以便恢复
+- 想避免冲突：可以先用 `load <level_id>` 在游戏内加载关卡测试，最后再 `save_level` 写回地图
+
 ### 2.3 `godot/`
 
 Godot 引擎的 Pck 文件（资源包）。本项目不需要访问。
