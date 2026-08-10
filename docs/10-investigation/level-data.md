@@ -2,7 +2,7 @@
 title: 关卡与存档数据
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（2026-08-10 补 campaign 官方源 + meta.txt + ui.txt 格式 + backup wiki 校对）
+status: 已审（2026-08-10 补 Stuffe 仓库可访问性 + 本地 campaign 路径）
 ---
 
 # 关卡与存档数据
@@ -162,7 +162,14 @@ E:\SteamLibrary\steamapps\common\Turing Complete\
 
 **关卡定义**。每个子目录对应一个关卡，目录名（snake_case）与 `levels.txt` 中的 `level_id` 一致。
 
-**官方源**：[`Stuffe/tc_campaign`](https://github.com/Stuffe/tc_campaign) —— 游戏作者维护的主线关卡 Git 仓库，含全部 88 个主线关卡的完整定义文件。是调查 campaign 目录的**权威参考**，比逆向省事得多。
+**Stuffe 是游戏开发者**（同时维护 `tc_*` 系列仓库），曾公开 `Stuffe/tc_campaign` 作为关卡数据仓库——该仓库**当前不可访问**（已归档/迁移），不作为参考源。
+
+**本地访问**：游戏安装目录下自带 `campaign/` 目录（`E:\SteamLibrary\steamapps\common\Turing Complete\campaign\`），含全部 88 个主线关卡的完整定义文件。**调查 campaign 直接读本地即可**——内容与历史 `tc_campaign` 一致。
+
+Stuffe 其他仍可访问的相关仓库：
+
+- [`isa_spec`](https://github.com/Stuffe/isa_spec)（Assembly，MIT）—— ISA 规范文档（详见 [`architecture-levels.md`](architecture-levels.md) §Spec.isa 文件结构）
+- [`save_monger`](https://github.com/Stuffe/save_monger)（Nim）—— 第三方存档管理工具，与本项目同类
 
 样例：
 ```
