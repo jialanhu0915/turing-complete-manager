@@ -1,11 +1,11 @@
 ---
-title: 设计方向（基于外部参考实现 tc-save-lab）
-last_updated: 2026-08-08
+title: 设计方向（基于 Stuffe 官方仓库 + tc-save-lab 参考）
+last_updated: 2026-08-10
 scope: design
-status: 占位（已大幅重新评估）
+status: 已重写（Stuffe/save_monger + tc_save_monger crate 路线）
 ---
 
-# 设计方向（基于外部参考实现 tc-save-lab）
+# 设计方向（基于 Stuffe 官方仓库 + tc-save-lab 参考）
 
 > ⚠️ **本次 wiki 不包含任何设计内容**。
 > 本目录保留作为后续设计文档的位置。
@@ -20,34 +20,52 @@ status: 占位（已大幅重新评估）
 |---|---|---|
 | `circuit.data` schema（v15） | ✅ 已知 | `tc-save-lab/codec.py` 实测可读写 |
 | `circuit.data` schema（v7/v13/v14） | ✅ 已知（只读） | `tc-save-lab/legacy_codec.py` |
+| `circuit.data` schema（v0..v15 全版本） | ✅ 已知 | [`Stuffe/save_monger`](https://github.com/Stuffe/save_monger)（**CC0，Stuffe 是游戏作者本人**） |
+| Spec.isa BNF 与解析器 | ✅ 已知 | [`Stuffe/isa_spec`](https://github.com/Stuffe/isa_spec)（MIT） |
+| `tc_save_monger` Rust crate | ✅ 可用 | [crates.io](https://crates.io/crates/tc_save_monger)（Credit: danielrab） |
+| 完整 ComponentKind 枚举（125 slot） | ✅ 已知 | `Stuffe/save_monger/common.nim` |
+| `ARCHITECTURE_KINDS = {62, 70}` | ✅ 已知 | `Stuffe/save_monger/common.nim` 常量定义 |
 | 关卡脚手架（I/O pin 定义） | ✅ 已知 | `tc-save-lab/scaffold.py` |
 | 离线组合逻辑穷举验证 | ✅ 已知 | `tc-save-lab/simulate.py` + `vector_sim.py` |
 | 原子写回 + 安全检查 | ✅ 已知 | `tc-save-lab/direct_install.py` + `foundry.py` |
-| `compile.dll` 实际调用 | ❌ 未做 | tc-save-lab **不提供**（完全离线） |
-| LLM 集成 | ❌ 未做 | tc-save-lab **不提供** |
+| Windows 文件锁重试模式 | ✅ 已知 | `Stuffe/save_monger`（`open_when_ready` / `add_file` / `get_file_and_store` 三处） |
+| `compile.dll` 实际调用 | ❌ 未做 | tc-save-lab + save_monger **均不提供**（完全离线） |
+| LLM 集成 | ❌ 未做 | — |
 
-**核心结论**：tc-save-lab **严格离线**，**零代码触碰 `compile.dll` / `replay.nim` / 游戏进程**。这正是我们 manager CLI 需要补的**唯一增量**。
+**核心结论**：Stuffe 是游戏作者，`Stuffe/save_monger`（CC0）是**官方 codec**，[`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate **可直接依赖**，省数月逆向实现工作量。tc-save-lab（Python 逆向）降级为参考。tc-save-lab 严格离线，**零代码触碰 `compile.dll` / `replay.nim` / 游戏进程**——这是我们 manager CLI 需要补的增量。
 
 ---
 
-## tc-save-lab vs 我们的 manager CLI
+## 参考实现层次
 
 ```
-                    tc-save-lab                 manager CLI (要做的)
-                    ──────────                 ───────────────────
-读写 circuit.data    ✅ v15 严格读写             ✅（直接采用 tc-save-lab codec）
-读 campaign        ✅ v7/v13/v14/v15 只读      ✅（同样采用 legacy codec）
-提取关卡 I/O       ✅ scaffold.py              ✅（直接复用 LEVEL_INPUT_KINDS 等常量）
-离线仿真           ✅ simulate.py              ✅（离线预验证）
-安全写回            ✅ atomic + game-running    ✅（抄过来）
-                    
-驱动游戏本体        ❌ 从不做                   🆕 必须做（这就是 D-7 + D-1）
-注入电路到游戏      ❌ 不存在                   🆕 必须做
-读测试结果         ❌ 不存在                   🆕 必须做
-LLM 集成           ❌ 不存在                   🆕（D-5，可后置）
+            Stuffe/save_monger (CC0)              tc-save-lab (Python 逆向)
+            ────────────────────                  ──────────────────────
+读写 circuit.data  ✅ v0..v15 全版本                ✅ v15 严格 + v7/v13/v14 只读
+读 campaign       ✅ 同上                         ✅ 同上（独立演化）
+提取关卡 I/O       ✅ 常量定义（ARCHITECTURE_KINDS ✅ scaffold.py
+                   等见 common.nim）
+离线仿真          ✅ （state_to_binary 测试用）    ✅ simulate.py + vector_sim.py
+安全写回          ✅ Windows 文件锁重试模式        ✅ atomic + game-running
+官方权威性         ✅ Stuffe 本人                   ❌ 第三方逆向
+Rust crate          ✅ tc_save_monger (crates.io)  ❌ 只有 Python
+
+                                  ↓ 都可作为依赖
+
+                            manager CLI (要做的)
+                            ───────────────────
+读写 circuit.data    ✅ 直接用 tc_save_monger crate（无需移植）
+读 campaign        ✅ 直接用 tc_save_monger crate
+提取关卡 I/O       ✅ 直接用 crate 的常量
+离线仿真           ✅ 暂时用 crate + Python fallback
+
+驱动游戏本体        ❌ tc-save-lab + save_monger 都不做   🆕 必须做（D-7 + D-1）
+注入电路到游戏      ❌ 同上                                🆕 必须做
+读测试结果         ❌ 同上                                🆕 必须做
+LLM 集成           ❌ 同上                                🆕（D-5，可后置）
 ```
 
-**manager CLI 相对于 tc-save-lab 的本质增量：把电路从"离线写文件"升级为"游戏本体验证"**。
+**manager CLI 相对于现有参考的本质增量：把电路从"离线写文件"升级为"游戏本体验证"**。
 
 ---
 
@@ -67,11 +85,13 @@ LLM 集成           ❌ 不存在                   🆕（D-5，可后置）
 - 我们**目前不需要**完整 parser——我们关心的是测试结果，不是 replay 历史
 - 若后续要做"历史 replay 重放"才需要做
 
-### ~~D-3. circuit.data 完整 schema 逆向~~ → ✅ 已被 tc-save-lab 完成
+### ~~D-3. circuit.data 完整 schema 逆向~~ → ✅ 已被 Stuffe/save_monger 完成
 
 - W-1 不再是 open question
-- 直接采用 tc-save-lab 的实现（Python 版可用 / 移植到 Rust）
-- 详见 `10-investigation/circuit-data-format.md`
+- **官方源**：[`Stuffe/save_monger`](https://github.com/Stuffe/save_monger)（CC0，Stuffe 是游戏作者本人）
+- 含 v0..v15 全版本实现 + 16 个版本分发逻辑
+- **推荐路径**：直接依赖 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate（CC0 + Rust port），不再需要 Python→Rust 移植
+- 详见 `10-investigation/circuit-data-format.md` §Stuffe/save_monger
 
 ### D-4. CLI 工具（`tcc`）→ **形态需要明确**
 
@@ -116,17 +136,18 @@ LLM 集成           ❌ 不存在                   🆕（D-5，可后置）
 
 ---
 
-## 新推荐顺序（基于 tc-save-lab）
+## 新推荐顺序（基于 Stuffe 官方仓库 + tc-save-lab）
 
 ```
-✅ W-1 (circuit.data v15 schema)        ← tc-save-lab 已完成
-✅ D-6 (campaign 解析)                  ← tc-save-lab 已完成
+✅ W-1 (circuit.data v15 schema)        ← Stuffe/save_monger + tc_save_monger crate 已完成
+✅ W-2 (Rust 移植 codec)                ← 已废止，改用 tc_save_monger crate
+✅ D-6 (campaign 解析)                  ← Stuffe/save_monger + tc-save-lab 已完成
+   ↓
+🆕 Cargo.toml: 加 `tc_save_monger = "..."`  ← 直接用 Rust crate（省 W-2）
    ↓
 D-1 (compile.dll 函数签名调研)         ← IDA/Ghidra strings + 试探调用
    ↓
 D-7 (注入机制选定 = 选项 B)             ← DLL 直接调用
-   ↓
-W-2 (Rust 移植 codec 到 Tauri)         ← 让 manager app 也能读写电路
    ↓
 D-4 (CLI 工具)                          ← 串起来
    ↓
@@ -165,7 +186,9 @@ schematics/<level>/
 
 ---
 
-## 可借鉴的安全 / 工程模式（来自 tc-save-lab）
+## 可借鉴的安全 / 工程模式
+
+### 来自 tc-save-lab
 
 | 模式 | 文件 | 我们怎么用 |
 |---|---|---|
@@ -174,6 +197,14 @@ schematics/<level>/
 | 计划-写-校验 | `direct_install.py:489-712` | D-5 闭环的每轮基线 |
 | reparse-point 防御 | `direct_install.py` | 防 symlink 攻击 |
 | SHA256 重校验 | 多处 | 写前后比对 |
+
+### 来自 Stuffe/save_monger
+
+| 模式 | 文件 | 我们怎么用 |
+|---|---|---|
+| **Windows 文件锁重试** | `save_monger.nim:8-19` (`open_when_ready`)、`pk_versions/common.nim:53-77` (`add_file`)、`pk_versions/v0.nim:75-80` (`get_file_and_store`) | `src-tauri/src/backup.rs` 必须有同样模式——retry + sleep(1ms) |
+| **`.pk` 文件 random custom_id remapping** | `pk_versions/v0.nim:49-58` | 防 ID 冲突：导入分享包时自动 remap custom_id |
+| **Snappy 最大解压尺寸** | `pk_versions/v0.nim:10` (`MAX_UNCOMPRESSED_SIZE = 100_000_000`) | Rust crate 也应有同样安全限制 |
 
 ---
 
@@ -189,16 +220,23 @@ schematics/<level>/
 
 ---
 
-## 与 tc-save-lab 的协作策略
+## 与外部实现的协作策略
 
-**最优**：把 tc-save-lab 的 `src/tc_save_lab/` 当成"代码参考库"，而不是 git submodule / 依赖。原因：
+### 优先级
 
-1. 它是另一个独立项目，独立演化
-2. 我们需要 Rust 实现（Tauri app 共享），它只有 Python
-3. 接口稳定但内部实现可能变
+1. **首选**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate —— CC0 + 已存在，比任何移植方案都高效
+2. **次选**：直接读 `reference/save_monger/`（Stuffe/save_monger 已 clone 到本地）源码作为权威参考
+3. **第三选**：仅当 crate 不可用时，照 `Stuffe/save_monger` 的 Nim 代码移植
 
-**做法**：
-- 抄 codec.py / binary.py / snappy.py 的逻辑，移植到 Rust（用 `byteorder` + `snap` crate）
-- 抄 scaffold.py 的算法（LEVEL_INPUT_KINDS 等常量照搬）
-- 抄 direct_install.py 的安全模式
-- 我们**新写的代码**只聚焦在 tc-save-lab 不提供的部分：游戏本体调用 + 注入机制
+### tc-save-lab 角色（降级）
+
+- 它是 Python 第三方逆向项目，独立演化
+- 我们需要 Rust 实现（Tauri app 共享），它只有 Python
+- 用法：作为算法验证与 scaffold.py 算法的参考（LEVEL_INPUT_KINDS 等常量照搬）
+
+### 我们**新写的代码**只聚焦在 tc-save-lab + save_monger 都不提供的部分
+
+- 游戏本体调用（D-1）
+- 注入机制（D-7）
+- 测试结果读取
+- LLM 集成（D-5）
