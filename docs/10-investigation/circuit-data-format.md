@@ -294,6 +294,7 @@ pub fn parse<'a>(bytes: Vec<u8>) -> Circuit<'a>  // 唯一公开函数，零拷�
 **注意事项**：
 - `parse` 返回 `Circuit<'a>`，**无 Result**——错误处理可能 panic 或返回不完整 Circuit
 - docs.rs 上 0% 有 rustdoc 注释，使用前需读 `src/tc_save_monger/lib.rs` 源码
+- **crate 使用实验性 macros**——`#![feature(decl_macro)]` + 3 处 `macro X {}`（不是 `macro_rules!`）。需 vendor + patch 才能在 stable Rust 下编译：删除 feature flag + `macro X {}` → `macro_rules! X {}`。本项目通过 `[patch.crates-io]` + `vendor/tc_save_monger/` 实现
 
 **旧 W-2 计划作废**：不再需要以下手工实现：
 - ~~`binary.py` → `byteorder` crate~~

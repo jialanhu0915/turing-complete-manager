@@ -40,3 +40,10 @@ dist-ssr
 # vendored: kept outside version control since they're external and
 # updated independently by the upstream maintainer.
 /reference/
+
+# Local vendored copy of tc_save_monger 0.4.5 (patched: decl_macro +
+# macro → macro_rules! for stable Rust compat). Regenerate via:
+#   cargo vendor vendor/ --manifest-path src-tauri/Cargo.toml
+#   # then edit vendor/tc_save_monger/src/lib.rs (remove feature flag,
+#   # convert 3 `macro X {}` to `macro_rules! X {}`)
+/vendor/
