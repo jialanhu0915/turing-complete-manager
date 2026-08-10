@@ -2,7 +2,7 @@
 title: 关卡与存档数据
 last_updated: 2026-08-10
 scope: investigation
-status: 已审（2026-08-10 补 campaign 官方源 + meta.txt + ui.txt 格式）
+status: 已审（2026-08-10 补 campaign 官方源 + meta.txt + ui.txt 格式 + backup wiki 校对）
 ---
 
 # 关卡与存档数据
@@ -113,9 +113,20 @@ schematics/double_number/缺省/circuit_backup_0.data  238 B
 
 文件大小约 4.8 KB。
 
+> ⚠️ **安全警告（wiki 校对）**：`settings.txt` 包含**个性化令牌**，可用于干扰 Steam 个人资料。**不应在公共场合分享包含此文件的存档备份**——若要分享，仅分享 `schematics/` 目录（或更窄：仅特定原理图）。
+
 ### 1.5 `steam_autocloud.vdf`
 
 Steam 云同步标记，由 Steam 客户端管理，本项目不读不写。
+
+> ⚠️ **恢复冲突（wiki 校对）**：Steam 云同步会**干扰手动恢复备份**——Steam 会尝试恢复到它最后已知的版本。建议恢复流程：
+> 1. 关闭 Steam 云同步
+> 2. 关闭游戏
+> 3. **用备份覆盖存档目录**（最好先删当前目录以避免残留）
+> 4. 启动游戏 → Steam 显示"云冲突" → 选**"本地存档"**上传恢复的数据
+> 5. 重新打开云同步
+>
+> 这一流程对本项目 `backup.rs` 的用户提示有直接影响：恢复向导应警告用户先关闭云同步。
 
 ---
 
