@@ -2,7 +2,7 @@
 title: 关卡与存档数据
 last_updated: 2026-08-11
 scope: investigation
-status: 已审（2026-08-11 实测 campaign 目录：98 关卡；hint 多步提示系统补全）
+status: 已审（2026-08-11 实测 campaign 目录：98 关卡；hint 多步提示系统补全；§2.2.1 meta.txt 字段 Wiki + 实测综合，~30 字段）
 ---
 
 # 关卡与存档数据
@@ -218,22 +218,75 @@ campaign/
 
 #### 2.2.1 `meta.txt` 格式
 
-INI-like key-value 格式（来源 wiki `Custom_level_creation/meta.txt`）：
+INI-like key-value 格式（2026-08-11 校对：来源 wiki `Custom_level_creation/meta.txt` + `E:\SteamLibrary\...campaign\*\meta.txt` 实测）：
 
-| 字段 | 必需 | 取值 | 说明 |
-|---|---|---|---|
-| `kind` | 是 | `misc` / `combinational` / `sequential` / `architecture` / `factory` | 关卡类型（**架构关卡对应 `architecture`**） |
-| `size` | 是 | U16 | 画布尺寸 |
-| `title` | 是 | string | 关卡显示名（可与目录名不同，如 `binary_search/` → "Storage Cracker"） |
-| `dialogue` | 是 | multi-line | 教程对话（用 `mentor_centered` / `info` / `overture` 等图片占位符） |
-| `tests` | 否 | int | 测试运行次数 |
-| `tick_past_fail` | 否 | bool | 失败后是否继续 tick |
-| `next_level` | 否 | string | 下一关卡 ID |
-| `components_available` | 否 | int / list | 可用组件清单（-1 = 不限） |
-| `add_components` / `remove_components` | 否 | list | 修改 build 菜单 |
-| `immutable_program` / `immutable_spec` | 否 | bool | 防止玩家编辑默认 `.asm` / `.isa` |
+**必需字段（4 个）**：
 
-> ⚠️ wiki 标注 "early access 2.0.16 alpha"——稳定版字段可能略有差异。建议与 `Stuffe/tc_campaign` 实测对照。
+| 字段 | 取值 | 说明 |
+|---|---|---|
+| `kind` | `misc` / `combinational` / `sequential` / `architecture` / `factory` | 关卡类型（架构关卡对应 `architecture`） |
+| `size` | U16 | 画布尺寸（架构关卡忽略） |
+| `title` | string（i18n 元组 `(key, "English fallback")`） | 关卡显示名（可与目录名不同，如 `binary_search/` → "Code Breaker"） |
+| `dialogue` | multi-line | 教程对话（image + text 元组列表） |
+
+**可选字段**（按字母序 ~30 个，**实测 + Wiki 综合**）：
+
+| 字段 | 类型 | 说明 / 实测 |
+|---|---|---|
+| `add_components` | `{ComponentKind: SInt}` | Wiki 列出 |
+| `allow_immutable_ram_pipeline` | `Bool` | Wiki 列出；允许在不可变 RAM 上切换 SRAM/DRAM |
+| `arch_input_word_size` | `SInt` | Wiki 列出；架构关 IO 字长 |
+| `background` | `UInt` | Wiki 列出；实测 `assembly_programming` / `sandbox` / `maze` 均 = 4 |
+| `components_available` | `{ComponentKind: SInt}` | Wiki 列出；-1 = 不限 |
+| `copy_solution_to_architecture` | `String` | Wiki 列出；实测 `assembly_programming/meta.txt = "Overture"`（ISA 完成后复制到 Overture） |
+| `copy_solution_to_foundry` | `String` | Wiki 列出（未实测） |
+| `copy_solution_to_level` | `[String]` | Wiki 列出（**Wiki 自标"解析可能有 bug"**） |
+| `cycle_past_fail` | `SInt` | **实测命名**：实测 `and_gate/meta.txt = 4`；wiki 写 `tick_past_fail`（**字段别名/版本差异**） |
+| `default_architecture` | `String` | **实测多出**：10 个架构关卡用（如 `binary_search` → `"Overture"`）；wiki **未列** |
+| `default_assembly` | `String` | Wiki 列出（**未实测为 meta.txt 字段**；campaign/ 里的 `new_program.asm` 是文件名） |
+| `default_isa_spec` | `String` | Wiki 列出（同上，`default.isa` 是文件名） |
+| `hint_kind` | `Kind` | **实测多出**：实测 `and_gate/meta.txt = combinational`；wiki 未列 |
+| `immutable_isa` | `Bool` | **实测命名**：实测 `assembly_programming/meta.txt = true`；wiki 写 `immutable_spec`（**字段别名/版本差异**） |
+| `immutable_program` | `Bool` | Wiki 列出；防编辑 RAM/ROM ASM |
+| `immutable_spec` | `Bool` | Wiki 列出；防编辑 `spec.isa` |
+| `modify_component_budget` | `[Component: Int]` | Wiki 列出；调整组件预算（-1 = 不限） |
+| `next_level` | `String` | Wiki 列出 |
+| `no_controls` | `Bool` | Wiki 列出 |
+| `no_panel` | `Bool` | Wiki 列出 |
+| `no_score` | `Bool` | Wiki 列出；实测 `and_gate/meta.txt = true` |
+| `no_state_ui` | `Bool` | Wiki 列出 |
+| `output_history_pins` | `SInt` | Wiki 列出（**已废弃**，避免使用） |
+| `overwrite_assembly` | `Bool` | Wiki 列出 |
+| `post_mortem` | `Dialogue` | Wiki 列出；失败后对话 |
+| `post_mortem_first_win` | `Dialogue` | Wiki 列出 |
+| `remove_components` | `[ComponentKind]` | Wiki 列出 |
+| `test_assembly_component` | `String` | Wiki 列出；不可变 ASM 的内存组件 |
+| `tests` | `SInt` | Wiki 列出；测试运行次数（首个 fail 停止） |
+| `tick_past_fail` | `SInt` | Wiki 命名（同 `cycle_past_fail`）；失败后额外 tick（最后一个必须 `return win`） |
+| `unlocks_components` | `[ComponentKind]` | Wiki 列出；实测 `and_gate/meta.txt = [com_and_bit]` |
+| `unlocks_info` | `String` | Wiki 列出 |
+| `unlocks_pages` | `[String]` | Wiki 列出；实测 `assembly_programming/meta.txt = ["Assembly/Language creation", "Assembly/Assembly programming"]` |
+| `unlocks_special` | `[String]` | Wiki 列出 |
+
+**Dialogue 元组结构**：
+
+```
+(mentor_centered, (i18n_key, "English fallback"))
+```
+
+图片占位符（Wiki 完整列表）：`mentor_centered` / `mentor_left` / `mentor_smile` / `info` / `info_centered` / `overture`
+
+**实测 vs Wiki 命名差异**（2026-08-11）：
+
+| 实际游戏字段 | Wiki 字段名 | 关系 |
+|---|---|---|
+| `cycle_past_fail` | `tick_past_fail` | 实测可能更新（实测 `and_gate/meta.txt = 4`） |
+| `immutable_isa` | `immutable_spec` | 实测可能更新（实测 `assembly_programming/meta.txt = true`） |
+| `hint_kind` | （未列） | 实测多出的字段（实测 `and_gate/meta.txt = combinational`） |
+| `default_architecture` | （未列） | 实测多出的字段（10 个架构关卡用，详见 [`architecture-levels.md` §1.1](architecture-levels.md)） |
+| `default_isa_spec` / `default_assembly` | （wiki 列为 meta.txt 字段） | 可能是文件名（`default.isa` / `new_program.asm`），**待实测确认**——实测 `assembly_programming/` 含 `default.isa` 和 `new_program.asm` 文件，meta.txt 是否含 `default_isa_spec`/`default_assembly` 字段未直接观察到 |
+
+> ⚠️ Wiki 标注 "early access 2.0.16 alpha"——**实测为权威**，Wiki 部分字段名过时。
 
 #### 2.2.2 `ui.txt` 格式
 
