@@ -1,8 +1,8 @@
 ---
 title: 关卡与存档数据
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 scope: investigation
-status: 已审（2026-08-10 补 Stuffe 仓库可访问性 + 本地 campaign 路径）
+status: 已审（2026-08-11 实测 campaign 目录：98 关卡；hint 多步提示系统补全）
 ---
 
 # 关卡与存档数据
@@ -143,7 +143,7 @@ E:\SteamLibrary\steamapps\common\Turing Complete\
 ├── soft_oal.dll                   # 2.1 MB，OpenAL 软实现（音频）
 ├── steam_api64.dll                # 309 KB，Steamworks SDK
 ├── asset/                         # 游戏内图片、字体、声音等
-├── campaign/                      # 关卡定义（88 个子目录 + .png 资源）
+├── campaign/                      # 关卡定义（98 个子目录 + .png 资源）
 ├── godot/                         # Godot 引擎资源
 └── translations/                  # i18n 翻译
 ```
@@ -164,7 +164,7 @@ E:\SteamLibrary\steamapps\common\Turing Complete\
 
 **Stuffe 是游戏开发者**（同时维护 `tc_*` 系列仓库），曾公开 `Stuffe/tc_campaign` 作为关卡数据仓库——该仓库**当前不可访问**（已归档/迁移），不作为参考源。
 
-**本地访问**：游戏安装目录下自带 `campaign/` 目录（`E:\SteamLibrary\steamapps\common\Turing Complete\campaign\`），含全部 88 个主线关卡的完整定义文件。**调查 campaign 直接读本地即可**——内容与历史 `tc_campaign` 一致。
+**本地访问**：游戏安装目录下自带 `campaign/` 目录（`E:\SteamLibrary\steamapps\common\Turing Complete\campaign\`），含**全部 98 个关卡**的完整定义文件（**2026-08-11 实测**，非 88）。**调查 campaign 直接读本地即可**——内容与历史 `tc_campaign` 一致。
 
 Stuffe 其他仍可访问的相关仓库：
 
@@ -197,17 +197,24 @@ campaign/
 └── ...
 ```
 
-88 个关卡子目录，加上几百个 `.png` / `.cvd.png` 视觉资源（关卡插画/位图，可能为全局共享）。
+98 个关卡子目录，加上几百个 `.png` / `.cvd.png` 视觉资源（关卡插画/位图，可能为全局共享）。
 
-**关卡定义格式**（wiki 已校 2026-08-10）—— 每个关卡子目录含 4 个核心文件：
+**关卡定义格式**（wiki 已校 2026-08-10；2026-08-11 实测补 hint 系统）—— 每个关卡子目录含**至少 4 个核心文件**：
 
-| 文件 | 用途 | 格式 |
-|---|---|---|
-| `circuit.data` | 关卡默认布局（含红色不可删除组件、建议组件等） | v13 二进制（详见 [`circuit-data-format.md`](circuit-data-format.md)） |
-| `meta.txt` | 关卡元数据：标题、教程对话、画布尺寸、默认 ISA、默认程序等 | INI-like key-value（§2.2.1） |
-| `ui.txt` | 屏幕底部面板的文字/图片元数据 | 方括号条目（§2.2.2） |
-| `test.si` | 初始化与验证玩家电路的代码 | Simplex DSL（详见 [`compile-signature.md`](compile-signature.md) §test.si API 校对） |
-| `*.png` / `*.cvd.png` | 关卡视觉资源 | — |
+| 文件 | 必需 | 用途 | 格式 |
+|---|---|---|---|
+| `circuit.data` | ✅ | 关卡默认布局（含红色不可删除组件、建议组件等） | v13/v14 二进制（详见 [`circuit-data-format.md`](circuit-data-format.md)） |
+| `meta.txt` | ✅ | 关卡元数据：标题、教程对话、画布尺寸、默认 ISA、默认程序等 | INI-like key-value（§2.2.1） |
+| `ui.txt` | ✅ | 屏幕底部面板的文字/图片元数据 | 方括号条目（§2.2.2） |
+| `test.si` | ✅ | 初始化与验证玩家电路的代码 | Simplex DSL（详见 [`compile-signature.md`](compile-signature.md) §test.si API 校对） |
+| `hint_0.data` / `hint_0.txt` | ❌ | **第 1 步提示**（电路 + 教学文字） | v13/v14 + i18n 元组 |
+| `hint_1.data` / `hint_1.txt` | ❌ | 第 2 步提示…… | 同上 |
+| `hint_N.data` / `hint_N.txt` | ❌ | 第 N 步提示（37 关卡有） | 同上 |
+| `hint_solution.data` | ❌ | **官方示例解**（66 关卡有） | v13/v14 |
+| `hint_solution.txt` | ❌ | 示例解的说明文字 | i18n 元组 |
+| `*.png` / `*.cvd.png` | ❌ | 关卡视觉资源 | — |
+
+> ⚠️ **"官方示例解" ≠ "最优解"**。`hint_solution.data` 是 Stuffe 写给玩家卡关时参考的实现，**目的是教学思路**（往往故意写得"标准"而非"极简"，让新手看得懂）。玩家完全可能做出**门数更少 / 延迟更低**的方案。详见 [`hint-system.md`](hint-system.md)。
 
 #### 2.2.1 `meta.txt` 格式
 
@@ -246,7 +253,38 @@ INI-like key-value 格式（来源 wiki `Custom_level_creation/meta.txt`）：
 - 可临时用 `../<other_level>/<file>.png` 路径占位
 - `ui.txt` **不热重载**——改完需重启游戏
 
-#### 2.2.3 把关卡放入地图
+#### 2.2.3 Hint 系统（多步提示）
+
+> 详细调研见 [`hint-system.md`](hint-system.md)。本节仅作摘要。
+
+教学关卡自带**多步提示系统**（`.data` + `.txt` 配套），玩家在游戏内点击 Hint 按钮逐级展开：
+
+- `hint_0.data` / `hint_0.txt` —— 第 1 步（最简单的子电路）
+- `hint_1.data` / `hint_1.txt` —— 第 2 步
+- ... 累加 ...
+- `hint_solution.data` / `hint_solution.txt` —— **官方示例解**（完整电路 + 说明文字）
+
+**实测覆盖**（2026-08-11，`E:\SteamLibrary\steamapps\common\Turing Complete\campaign\`）：
+
+| 类别 | 关卡数 | 占比 |
+|---|---|---|
+| 总关卡 | 98 | 100% |
+| 有 `hint_solution.data` | 66 | 67% |
+| 有任意 `hint_*.data`（含 `hint_solution`） | 67 | 68% |
+| 有多步提示（`hint_0` 到 `hint_N`） | 37 | 38% |
+| 无任何 hint | 31 | 32% |
+
+**关键事实**：
+- `hint_*.data` 文件格式版本 **= 同关卡 `circuit.data` 版本**（v13 或 v14，**不走 schematics 的 v15**）
+- 读取这些文件需要 v13/v14 codec（test/verify-cli 的 `circuit/legacy.rs` 已有 v13/v14 只读）
+- `*.txt` 内容形如 `[text text=(31337_68158507707802, \`...English text...\`)]`——i18n key + 英文 fallback
+- **"官方示例解" ≠ "最优解"**（详见 [`hint-system.md` §示例解与最优解的区别](hint-system.md)）
+
+**典型有 hint 的关卡**：`always_on` / `and_gate` / `and_gate_3` / `bit_inverter` / `bit_switch` / `counter` / `full_adder` / `the_bus` / `ram_component` 等（皆教学关卡）。
+
+**典型无 hint 的关卡**：`assembly_programming` / `binary_programming` / `binary_search` / `*_racer` 等（架构 / 编程 / 竞赛类关卡，电路不是解题路径）。
+
+#### 2.2.4 把关卡放入地图
 
 （来源 wiki `Custom_level_creation/Adding_your_level_to_the_map`）
 

@@ -1,8 +1,8 @@
 ---
 title: Wiki 索引
-last_updated: 2026-08-08
+last_updated: 2026-08-11
 scope: index
-status: 已审
+status: 已审（2026-08-11 补 hint-system.md；level-data.md §2.2.3 补 hint 摘要）
 ---
 
 # Turing Complete Manager · 调研 Wiki
@@ -15,13 +15,14 @@ status: 已审
 ## 阅读顺序
 
 1. **`00-overview.md`** — 项目总览、范围、术语
-2. **`10-investigation/`** — 六篇调研文档，建议按下面顺序读：
+2. **`10-investigation/`** — 七篇调研文档，建议按下面顺序读：
    1. `dll-analysis.md` — 了解游戏本体有哪些可调用的 DLL
    2. `replay-format.md` — 了解 `replay.nim` 是干什么的、怎么生成
    3. `component-catalog.md` — 完整的 101 个电路组件目录
    4. `command-state.md` — 仿真命令与状态字段
-   5. `level-data.md` — 存档目录、关卡定义、玩家电路存档
+   5. `level-data.md` — 存档目录、关卡定义、玩家电路存档、**hint 系统摘要**
    6. `circuit-data-format.md` — 玩家电路存档的二进制格式骨架
+   7. `hint-system.md` — **多步提示系统详解**（hint_0..N + hint_solution 的语义、覆盖率、与最优解的区别）
 3. **`20-design/index.md`** — 后续设计方向占位（CLI / LLM 优化器等）
 
 ## 目录约定
