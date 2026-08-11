@@ -1,8 +1,8 @@
 ---
 title: 项目总览
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 scope: overview
-status: 已审（2026-08-10 整合 Stuffe 官方仓库 + tc_save_monger crate 路线）
+status: 已审（2026-08-10 整合 Stuffe 官方仓库；2026-08-11 实测 tc_save_monger 不可用）
 ---
 
 # 项目总览
@@ -55,7 +55,7 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 ### 待办（后续独立计划）
 
 - ❌ 实际调用 `compile.dll` 驱动游戏本体（`compile` 函数签名未确定）
-- ❌ ~~Rust 移植 codec 到 Tauri app~~ → **改用 `tc_save_monger` crate**（CC0 + Rust port，crates.io，Credit: danielrab）
+- ❌ ~~Rust 移植 codec 到 Tauri app~~ → ❌ **实测 [2026-08-11]：`tc_save_monger` 0.4.5 不可用**（v6-only，详见 `10-investigation/circuit-data-format.md` §W-2）
 - ❌ `replay.nim` 解析器（**当前不需要**——`replay.nim` 只是仿真录屏，不直接服务电路优化）
 - ❌ CLI 工具 + LLM 优化循环
 - ❌ 修改游戏本体 / Steam Cloud 同步 / `levels.txt`（已与游戏自己维护机制冲突）
@@ -86,13 +86,13 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 - **Stuffe 官方仓库**（已 clone 到 `reference/`，在 .gitignore 排除）：
   - [`Stuffe/save_monger`](https://github.com/Stuffe/save_monger)（**CC0**）—— 游戏作者本人维护的官方存档读写代码，**最权威参考**
   - [`Stuffe/isa_spec`](https://github.com/Stuffe/isa_spec)（**MIT**）—— ISA 规范处理器实现
-- **Rust 依赖**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger) —— save_monger 的 Rust 移植版（Credit: danielrab），可直接当 Cargo 依赖
+- **Rust 依赖**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger) —— save_monger 的 Rust 移植版（Credit: danielrab），⚠️ **实测 v6-only**（详见 §W-2），仅 vendor + patch 用于 build 测试，无运行时使用
 - **外部参考实现**：`B:\VS_Code_Project\turing-complete-optimizer`（`tc-save-lab`）
   - 已实现 `circuit.data` 完整 v15 读写 + v7/v13/v14 只读解码
   - 92 个主线关卡的脚手架/基线/候选目录
   - 离线组合逻辑穷举验证（语义对齐 `replay.nim`）
   - **完全离线**：零代码触碰 `compile.dll` / `replay.nim` / 游戏进程
-  - 我们 manager CLI 的策略：**优先 `tc_save_monger` crate**，次选 tc-save-lab 移植
+  - 我们 manager CLI 的策略：**直接 port Stuffe/save_monger v15 Nim**（自写 codec，serde-free），不再依赖 Rust port crate
 
 ## 相关文档
 

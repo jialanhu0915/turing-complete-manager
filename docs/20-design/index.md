@@ -1,8 +1,8 @@
 ---
 title: 设计方向（基于 Stuffe 官方仓库 + tc-save-lab 参考）
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 scope: design
-status: 已重写（Stuffe/save_monger + tc_save_monger crate 路线）
+status: 已重写（Stuffe/save_monger 路线；2026-08-11 实测 tc_save_monger crate 不可用 → 改 plan v15 直接 port）
 ---
 
 # 设计方向（基于 Stuffe 官方仓库 + tc-save-lab 参考）
@@ -22,7 +22,7 @@ status: 已重写（Stuffe/save_monger + tc_save_monger crate 路线）
 | `circuit.data` schema（v7/v13/v14） | ✅ 已知（只读） | `tc-save-lab/legacy_codec.py` |
 | `circuit.data` schema（v0..v15 全版本） | ✅ 已知 | [`Stuffe/save_monger`](https://github.com/Stuffe/save_monger)（**CC0，Stuffe 是游戏作者本人**） |
 | Spec.isa BNF 与解析器 | ✅ 已知 | [`Stuffe/isa_spec`](https://github.com/Stuffe/isa_spec)（MIT） |
-| `tc_save_monger` Rust crate | ✅ 可用 | [crates.io](https://crates.io/crates/tc_save_monger)（Credit: danielrab） |
+| `tc_save_monger` Rust crate | ❌ **实测 [2026-08-11] 不可用**（v6-only，详见 `10-investigation/circuit-data-format.md` §W-2） | [crates.io](https://crates.io/crates/tc_save_monger)（Credit: danielrab） |
 | 完整 ComponentKind 枚举（125 slot） | ✅ 已知 | `Stuffe/save_monger/common.nim` |
 | `ARCHITECTURE_KINDS = {62, 70}` | ✅ 已知 | `Stuffe/save_monger/common.nim` 常量定义 |
 | 关卡脚手架（I/O pin 定义） | ✅ 已知 | `tc-save-lab/scaffold.py` |
@@ -32,7 +32,7 @@ status: 已重写（Stuffe/save_monger + tc_save_monger crate 路线）
 | `compile.dll` 实际调用 | ❌ 未做 | tc-save-lab + save_monger **均不提供**（完全离线） |
 | LLM 集成 | ❌ 未做 | — |
 
-**核心结论**：Stuffe 是游戏作者，`Stuffe/save_monger`（CC0）是**官方 codec**，[`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate **可直接依赖**，省数月逆向实现工作量。tc-save-lab（Python 逆向）降级为参考。tc-save-lab 严格离线，**零代码触碰 `compile.dll` / `replay.nim` / 游戏进程**——这是我们 manager CLI 需要补的增量。
+**核心结论**：Stuffe 是游戏作者，`Stuffe/save_monger`（CC0）是**官方 codec**。**2026-08-11 实测推翻**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust 移植版（crates.io，Credit: danielrab）**只 port 了 v6**，对所有 v15 文件 panic（详见 `10-investigation/circuit-data-format.md` §W-2）。新策略：**直接 port v15 Nim 代码到 Rust**（自写 codec，serde-free），Stuffe/save_monger 仍是最权威的源码参考。tc-save-lab（Python 逆向）降级为参考。tc-save-lab 严格离线，**零代码触碰 `compile.dll` / `replay.nim` / 游戏进程**——这是我们 manager CLI 需要补的增量。
 
 ---
 
@@ -48,16 +48,16 @@ status: 已重写（Stuffe/save_monger + tc_save_monger crate 路线）
 离线仿真          ✅ （state_to_binary 测试用）    ✅ simulate.py + vector_sim.py
 安全写回          ✅ Windows 文件锁重试模式        ✅ atomic + game-running
 官方权威性         ✅ Stuffe 本人                   ❌ 第三方逆向
-Rust crate          ✅ tc_save_monger (crates.io)  ❌ 只有 Python
+Rust crate          ❌ tc_save_monger v6-only (crates.io)  ❌ 只有 Python
 
                                   ↓ 都可作为依赖
 
                             manager CLI (要做的)
                             ───────────────────
-读写 circuit.data    ✅ 直接用 tc_save_monger crate（无需移植）
-读 campaign        ✅ 直接用 tc_save_monger crate
-提取关卡 I/O       ✅ 直接用 crate 的常量
-离线仿真           ✅ 暂时用 crate + Python fallback
+读写 circuit.data    🆕 自写 Rust codec (port v15 from Stuffe/save_monger Nim)
+读 campaign        🆕 同上
+提取关卡 I/O       🆕 直接用 Stuffe/save_monger/common.nim 的常量
+离线仿真           🆕 暂时用 tc-save-lab Python fallback
 
 驱动游戏本体        ❌ tc-save-lab + save_monger 都不做   🆕 必须做（D-7 + D-1）
 注入电路到游戏      ❌ 同上                                🆕 必须做
@@ -90,7 +90,7 @@ LLM 集成           ❌ 同上                                🆕（D-5，可�
 - W-1 不再是 open question
 - **官方源**：[`Stuffe/save_monger`](https://github.com/Stuffe/save_monger)（CC0，Stuffe 是游戏作者本人）
 - 含 v0..v15 全版本实现 + 16 个版本分发逻辑
-- **推荐路径**：直接依赖 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate（CC0 + Rust port），不再需要 Python→Rust 移植
+- **推荐路径**（**2026-08-11 实测推翻**）：❌ 直接依赖 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate **不可用**（v6-only，详见 `10-investigation/circuit-data-format.md` §W-2）。🆕 新策略：直接 port v15.nim 到 `src-tauri/src/circuit/parser.rs`（自写 codec，serde-free）
 - 详见 `10-investigation/circuit-data-format.md` §Stuffe/save_monger
 
 ### D-4. CLI 工具（`tcc`）→ **形态需要明确**
@@ -136,14 +136,15 @@ LLM 集成           ❌ 同上                                🆕（D-5，可�
 
 ---
 
-## 新推荐顺序（基于 Stuffe 官方仓库 + tc-save-lab）
+## 新推荐顺序（基于 Stuffe 官方仓库 + tc-save-lab；2026-08-11 修订）
 
 ```
-✅ W-1 (circuit.data v15 schema)        ← Stuffe/save_monger + tc_save_monger crate 已完成
-✅ W-2 (Rust 移植 codec)                ← 已废止，改用 tc_save_monger crate
+✅ W-1 (circuit.data v15 schema)        ← Stuffe/save_monger 已完成
 ✅ D-6 (campaign 解析)                  ← Stuffe/save_monger + tc-save-lab 已完成
+❌ W-2 (改用 tc_save_monger crate)        ← **实测 [2026-08-11] 不可用 (v6-only)**
    ↓
-🆕 Cargo.toml: 加 `tc_save_monger = "0.4.5"`  ← MIT 直接用（省 W-2）
+🆕 直接 port v15 from Stuffe/save_monger/versions/v15.nim 到 src-tauri/src/circuit/parser.rs
+🆕 移除 Cargo.toml `tc_save_monger` 依赖（vendor + patch 仅留作 build 测试）
    ↓
 D-1 (compile.dll 函数签名调研)         ← IDA/Ghidra strings + 试探调用
    ↓
@@ -224,9 +225,9 @@ schematics/<level>/
 
 ### 优先级
 
-1. **首选**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger) Rust crate —— CC0 + 已存在，比任何移植方案都高效
-2. **次选**：直接读 `reference/save_monger/`（Stuffe/save_monger 已 clone 到本地）源码作为权威参考
-3. **第三选**：仅当 crate 不可用时，照 `Stuffe/save_monger` 的 Nim 代码移植
+1. ~~**首选**：`tc_save_monger` crate~~ → ❌ **2026-08-11 实测推翻**：v6-only，所有 v15 文件 panic
+2. **首选**：直接读 `reference/save_monger/`（Stuffe/save_monger 已 clone 到本地）源码作为权威参考
+3. **次选**：照 `Stuffe/save_monger/versions/v15.nim` 自写 Rust codec（serde-free）
 
 ### tc-save-lab 角色（降级）
 

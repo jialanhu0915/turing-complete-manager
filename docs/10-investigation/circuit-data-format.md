@@ -1,8 +1,8 @@
 ---
 title: circuit.data 二进制格式
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 scope: investigation
-status: 已审（Stuffe/save_monger 官方 codec + 完整 ComponentKind 枚举已校对）
+status: 已审（Stuffe/save_monger 官方 codec + 完整 ComponentKind 枚举已校对）；W-2 实测：tc_save_monger 0.4.5 不可用（v6-only）
 ---
 
 # `circuit.data` 二进制格式
@@ -227,7 +227,7 @@ ARCHITECTURE_KINDS = {62, 70}  # com_level_input_switched + com_level_output_swi
 
 - **License**：CC0（公共领域），仅 SuperSnappy 依赖是 MIT
 - **完整版本支持**：v0..v15 全部实现（含本项目关注的 v13 / v15）
-- **Rust 移植**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger)（Credit: danielrab）—— **可直接当 Cargo 依赖用**
+- **Rust 移植**：[`tc_save_monger`](https://crates.io/crates/tc_save_monger)（Credit: danielrab）—— ⚠️ **不可用**（v6-only，详见 §W-2 实测）
 
 **关键二进制细节**（已校对 `save_monger.nim` 源码，对照本文档前版有偏差）：
 
@@ -265,43 +265,63 @@ v13/v14 codec (读)  ──┤
 ### ~~W-1 完整 schema 逆向~~ ✅ 已由 tc-save-lab 完成
 直接采用 `tc-save-lab/codec.py` 的实现（或移植到 Rust）。
 
-### W-2. ~~移植到 Rust~~ → 改用 `tc_save_monger` crate（推荐）
+### W-2. ~~移植到 Rust~~ → ❌ `tc_save_monger` crate 不可用（实测）
 
-⚠️ **重大变更**：发现 [`tc_save_monger`](https://crates.io/crates/tc_save_monger) —— Stuffe/save_monger 的 Rust 移植版（**MIT**，Credit: danielrab），**可直接作为 Cargo 依赖**。比原计划（自己逆向 + 实现 codec）省数月工作量，且行为与官方一致。
+⚠️ **2026-08-11 实测**：`tc_save_monger` 0.4.5（截至本日 crates.io 最新）在所有 3 个真实 v15 `circuit.data` 样本上 panic：
+
+```
+PANIC: unsupported version: 15   (at vendor/tc_save_monger/src/lib.rs:12)
+```
+
+Rust 端口**仍是 v6-only partial port**——0.4.0 → 0.4.5 这段时间没有补上 v13/v14/v15 支持。Stuffe/save_monger Nim 上游有 16 个版本分发器（v0..v15），Rust 移植一个都没实现。
+
+**前置历史**：发现 [`tc_save_monger`](https://crates.io/crates/tc_save_monger)（**MIT**，Credit: danielrab）曾被认为"可直接作为 Cargo 依赖，比自己逆向 + 实现 codec 省数月工作量"。**该判断已被本次实测证伪**。
 
 ```toml
-[dependencies]
+# 当前 Cargo.toml 仍保留依赖但未使用 —— 已知坏
 tc_save_monger = "0.4.5"
 ```
 
-**API 表面**（v0.4.5，docs.rs **0% 有文档**——集成时需自看源码）：
+**实测详情**（`cargo run --example parse_v15`，2026-08-11）：
+
+| 样本 | 字节长度 | 首字节 | 结果 |
+|---|---|---|---|
+| `not_gate/缺省/circuit.data` | 189 | 0x0F | PANIC `unsupported version: 15` |
+| `and_gate/缺省/circuit.data` | 220 | 0x0F | PANIC `unsupported version: 15` |
+| `full_adder/标准/circuit.data` | 489 | 0x0F | PANIC `unsupported version: 15` |
+
+> example 在 `src-tauri/examples/parse_v15.rs`（已 commit），用
+> `std::panic::catch_unwind` 把 panic 转成可读字符串。
+
+**API 表面**（v0.4.5，docs.rs **0% 有文档**）：
 
 ```rust
-pub fn parse<'a>(bytes: Vec<u8>) -> Circuit<'a>  // 唯一公开函数，零拷贝借用
-// Circuit<'a> 包含 5 structs + 3 enums：
+pub fn parse<'a>(bytes: Vec<u8>) -> Circuit<'a>  // 唯一公开函数
+// Circuit<'a>：5 structs + 3 enums
 //   Circuit, Component, Header, Point, Wire
 //   ComponentKind, SyncState, WireKind
+// ⚠️ Circuit 字段全部 private（header / components / wires 不可直接访问）
+//   —— 只有 Debug 输出可用；即使能 parse 也无法程序化读出。
 ```
 
 **依赖**：仅 `snap ^1.0.5`（Snappy 解压）
 
-**优势**：
-- 与官方 Nim 版本行为一致（含 16 个版本的解析逻辑 v0..v15）
-- **MIT** + Rust port，license 极宽松
-- 零拷贝设计（`Circuit<'a>` 借用输入 `bytes`）
-- API 极简（1 函数 + 5 struct + 3 enum）
+**本项目当前实际状态**：
 
-**注意事项**：
-- `parse` 返回 `Circuit<'a>`，**无 Result**——错误处理可能 panic 或返回不完整 Circuit
-- docs.rs 上 0% 有 rustdoc 注释，使用前需读 `src/tc_save_monger/lib.rs` 源码
-- **crate 使用实验性 macros**——`#![feature(decl_macro)]` + 3 处 `macro X {}`（不是 `macro_rules!`）。需 vendor + patch 才能在 stable Rust 下编译：删除 feature flag + `macro X {}` → `macro_rules! X {}`。本项目通过 `[patch.crates-io]` + `vendor/tc_save_monger/` 实现
+- 已 vendor + patch 到 `vendor/tc_save_monger/`（通过 `[patch.crates-io]`）
+- patch 内容：`#![feature(decl_macro)]` 注释掉 + 3 处 `macro X {}` → `macro_rules! X {}`（simple_extract / slice_extract / str_extract）—— 仅为让 crate 在 stable Rust 下编译
+- `cargo check` 通过（2.66s）
+- **零代码调用 `tc_save_monger` API**（只有 example 用于验证 + panic 复现）
 
-**旧 W-2 计划作废**：不再需要以下手工实现：
+**下一步**（按优先级）：
+
+1. **直接 port v15** 从 `reference/save_monger/versions/v15.nim` 到 `src-tauri/src/circuit/parser.rs`（自写 codec，serde-free）—— 真正解决问题
+2. **观察上游**：rust port 作者是否补 v15 支持（0.4.0→0.4.5 间隔很长，作者活跃度低，不应阻塞）
+
+**旧 W-2 计划作废**：不再需要以下手工实现（手工 port v15 才是新计划）：
 - ~~`binary.py` → `byteorder` crate~~
 - ~~`snappy.py` → `snap` crate~~
 - ~~`model.py` → `serde` 派生 `Circuit`/`Component`/`Wire`~~
-
-入口：`src-tauri/src/circuit/` 直接调用 crate API。
 
 ### W-3. 注入机制（D-7）—— 让游戏加载我们的电路
 - ~~改 `levels.txt`~~ 已排除
