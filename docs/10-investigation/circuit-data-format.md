@@ -2,7 +2,7 @@
 title: circuit.data 二进制格式
 last_updated: 2026-08-11
 scope: investigation
-status: 已审（Stuffe/save_monger 官方 codec + 完整 ComponentKind 枚举已校对）；W-2 实测：tc_save_monger 0.4.5 不可用（v6-only）
+status: 已审（Stuffe/save_monger 官方 codec + 完整 ComponentKind 枚举已校对）；W-2 实测：tc_save_monger 0.4.5 不可用（v6-only）；新增 §v13/v14 写 codec 可行性分析（实测可行 ~190 行，待 M7 export）
 ---
 
 # `circuit.data` 二进制格式
@@ -219,7 +219,7 @@ ARCHITECTURE_KINDS = {62, 70}  # com_level_input_switched + com_level_output_swi
 - ❌ 调用 `compile.dll` / 不启动游戏直接驱动仿真
 - ❌ 把候选电路"喂给游戏本体"做端到端验证
 - ❌ LLM 集成（生成候选）
-- ❌ Campaign v13/v14 的写（只读）
+- 🟡 **Campaign v13/v14 的写**（2026-08-11 已分析可行，~190 行 Rust，待 M7 自制关卡 export 实现，详见 [§v13/v14 写 codec 可行性](#v13v14-写-codec-可行性2026-08-11-实测)）
 
 ### `Stuffe/save_monger`（**官方 Nim codec**，CC0）
 
@@ -257,6 +257,76 @@ v13/v14 codec (读)  ──┤
 ```
 
 我们的 manager CLI **不只是 tc-save-lab 的复制**——核心增量是"用游戏本体（不是离线模拟）验证候选电路"。
+
+---
+
+## v13/v14 写 codec 可行性（2026-08-11 实测）
+
+**结论**：可行，~190 行 Rust，与 M7 自制关卡工具的 export 一起做（约 1-2 小时）。
+
+### 背景
+
+`test/verify-cli` 分支现状（`src-tauri/src/circuit/`）：
+
+| Codec | 状态 | 文件 |
+|---|---|---|
+| v15 读写（含 round-trip 测试） | ✅ 已实现 | `codec.rs`，535 行 |
+| v13/v14 **只读** | ✅ 已实现 | `legacy.rs`，420 行 |
+| v13/v14 **写** | ❌ 未实现 | — |
+
+M7 自制关卡工具的两侧对写能力的需求：
+
+- **import 侧**：❌ 不需要写（只读 + 校验 + 解 zip 即可）
+- **export 侧**：✅ **必须能写 v13/v14**（玩家改关卡后重新打包才能分享）
+
+### v15 vs v13/v14 格式差异（codec.rs + legacy.rs 实测对照）
+
+**Header**：v15 / v13 / v14 **完全相同**
+
+所有 13 个字段（`custom_id` / `hub_id` / `gate` / `delay` / `menu_visible` / `clock_speed` / `dependencies` / `description` / `sync_state` / `score` / `player_data` / `hub_description`）字节级一致；外加条件 `design` 块（512B，`custom_id != 0` 时）。**v7 独有的 `camera_position` 在 v13+ 已删除**。
+
+**Component 字段**：
+
+| 字段 | v15 | v13 | v14 |
+|---|---|---|---|
+| `kind` / `position` / `rotation` / `permanent_id` / `user_label` / `custom_string` / `settings` / `buffer_size` / `ui_order` / `word_size` | ✅ | ✅ | ✅ |
+| `immutable`（bool） | ✅ | ✅ | ✅ |
+| **`cost_gate`（i64）/ `cost_delay`（i64）** | ✅ | ❌（固定 -1 / 0） | ✅ |
+| `little_endian`（bool）/ `init_data`（u8） | ✅ | ✅ | ✅ |
+| `linked_components` / `selected_programs` | ✅ | ✅ | ✅ |
+| `custom_id` + `custom_word_sizes`（仅 `kind == 78`） | ✅ | ✅ | ✅ |
+
+> 关键差异：**只有 v14 + v15 写 `cost_gate` / `cost_delay`**；v13 缺这俩字段，游戏读 v13 时默认填 -1 / 0（`legacy.rs:161-163` 的 `with_cost: bool` 分支）。
+
+**Wire 编码**：v15 / v13 / v14 **完全相同**
+
+均为 u16 `(direction << 13) | length`，长度 0 为结束符。v7 独特的 `teleport_end` 在 v13+ 已废弃（`codec.rs:264` 写时显式拒绝带 teleport_end 的 wire）。
+
+### 实现估计
+
+| 工作 | 估算行数 | 来源 |
+|---|---|---|
+| `write_component_v13`（fork 自 codec.rs 的 `write_component`，跳过 cost 字段） | ~50 | 同 `read_component_v13_or_v14` 镜像 |
+| `write_component_v14`（= codec.rs 的 `write_component`） | ~50 | 直接复用 |
+| `encode_v13` / `encode_v14`（同 `encode_v15`，仅改版本字节 + 路由 component 函数） | ~30 | 镜像 `encode_v15` |
+| `write_body_v13_or_v14`（按 `with_cost` 选 component 写入函数） | ~10 | — |
+| round-trip 测试（`sim-shim/fixtures/` 已有 v13 样本） | ~50 | `legacy.rs` 内已有类似 `decode_v7` 测试 |
+| **合计** | **~190 行** | 1-2 小时工作量 |
+
+### 风险点
+
+1. **`cost_variant` 兼容性**：v13 不写 cost 字段，游戏读时默认填 -1 / 0——直接 round-trip 一份 v13 文件应能通过游戏加载（前提是原文件的 cost 不是 `cvk_min_gate` / `cvk_min_delay` sentinel，而是显式值）
+2. **`selected_programs` 是 Map**：v15/v13/v14 都用 `Vec<(String, String)>` 序列化；Map 迭代顺序可能影响二进制但不影响语义（游戏按 level 名查找）
+3. **`init_data` 边界**：v15 / v13 / v14 都是 u8 编码 `InitialDataKind` 枚举（0-5），无需转换
+4. **wire segment 长度**：13 位（max 8191 像素）—— 现代关卡一般不会超
+5. **fixture 覆盖**：`sim-shim/fixtures/and_gate/circuit.data` (v13) 等样本可直接 round-trip
+
+### 与 W-4 的关系
+
+W-4（"写回合法性测试——拿一份备份写回原位，启动游戏加载关卡看是否接受"）是 round-trip 的**功能测试**：
+
+- v15 已有单元 round-trip（`codec.rs:419` 测试），**不**等于游戏加载通过
+- v13/v14 写 codec 实现时应一并加 round-trip 单元测试；游戏加载的功能测试留待 M7 export 真正实现时再写
 
 ---
 
