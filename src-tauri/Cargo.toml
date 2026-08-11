@@ -22,7 +22,3 @@ walkdir = "2"
 chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
-tc_save_monger = "0.4.5"
-
-[patch.crates-io]
-tc_save_monger = { path = "../vendor/tc_save_monger" }
