@@ -32,10 +32,10 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 | `circuit/` | 6（binary/codec/legacy/model/pins/snappy） | `snap`、`serde` | 仅 `codec.rs:509` 测试用 `config::default_save_dir()` |
 | `dll/` | 6（exec/gen/loader/runtime/signature/test_si） | `libloading`、`serde_json` | 仅 `runtime.rs:108` 测试里一句**多余**的 `config::default_save_dir()`（后被 `let _ =` 丢弃） |
 | `game.rs` | 1 | `translations::detect_game_dir` | app 级，**留在 app**（游戏目录检测） |
-| `bin/verify.rs` | 1 | `circuit` + `dll` | 消费方，改 import 指向 crate |
+| `bin/test.rs` | 1 | `circuit` + `dll` | 消费方，改 import 指向 crate |
 | `sim-shim/` | 37 | Nim + Python（构建 shim.dll + 测试夹具） | 无 |
 
-已接线：lib.rs 加 `pub mod circuit/dll` + 5 个 Tauri 命令（`is_game_available`/`list_schematics`/`read_circuit`/`write_circuit`/`verify_circuit`）；Cargo.toml 加 `snap`/`libloading`。`cargo check --lib --bins` 通过（8 个 pre-existing warning）。
+已接线：lib.rs 加 `pub mod circuit/dll` + 5 个 Tauri 命令（`is_game_available`/`list_schematics`/`read_circuit`/`write_circuit`/`test_circuit`）；Cargo.toml 加 `snap`/`libloading`。`cargo check --lib --bins` 通过（8 个 pre-existing warning）。
 
 ---
 
@@ -64,7 +64,7 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 
 **app 侧改动**：
 - `lib.rs`：删 `pub mod circuit; pub mod dll;`，加 `use tc_mod_sdk::circuit;`（game.rs 留在 app）
-- `bin/verify.rs`：`turing_complete_manager_lib::circuit/dll` → `tc_mod_sdk::circuit/dll`
+- `bin/test.rs`：`turing_complete_manager_lib::circuit/dll` → `tc_mod_sdk::circuit/dll`
 - `Cargo.toml`：加 `tc-mod-sdk = { path = "../tc-mod-sdk" }`，移除 `snap`/`libloading`（移到 crate）
 
 ---
@@ -83,7 +83,7 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 |---|---|---|
 | M8-0 | 新分支 + 搬运 test/verify-cli 有用代码 | ✅ commit `17bd042` |
 | M8-1 | 抽 crate（circuit/ + dll/ → tc-mod-sdk）+ 解耦 + path dep | 🆕 本次 |
-| M8-2 | 验证：cargo check + codec round-trip + verify CLI 实测 | ❌ |
+| M8-2 | 验证：cargo check + codec round-trip + test CLI 实测 | ❌ |
 | M8-3 | 前端验证 UI section（可选，defer） | ❌ |
 | M8-4 | 发布 crates.io + and_gate 起步示例 + README 许可声明 | ❌ M8+1 |
 
@@ -95,7 +95,7 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 |---|---|---|
 | crate 引入方式 | Cargo workspace vs path dependency | **path dependency**（避免 Tauri workspace 复杂度） |
 | crate 发布名 | `tc-mod-sdk` / `tc-circuit-sdk` / 其他 | `tc-mod-sdk` |
-| 前端 verify UI 是否纳入本期 | 纳入 / defer | defer（先抽 crate + 后端验证跑通） |
+| 前端 test UI 是否纳入本期 | 纳入 / defer | defer（先抽 crate + 后端验证跑通） |
 
 ---
 

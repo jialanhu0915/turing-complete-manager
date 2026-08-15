@@ -162,9 +162,9 @@ fn is_game_available() -> bool {
     game::is_available()
 }
 
-/// Result of a verify_circuit invocation (parsed from the verify CLI's JSON).
+/// Result of a test_circuit invocation (parsed from the test CLI's JSON).
 #[derive(serde::Deserialize, serde::Serialize)]
-struct VerifyResult {
+struct CircuitTestResult {
     ok: bool,
     test_result: u64,
     cycles_run: i64,
@@ -225,20 +225,20 @@ fn write_circuit(
 }
 
 #[tauri::command]
-fn verify_circuit(level_id: String, scheme_id: String) -> Result<VerifyResult, String> {
+fn test_circuit(level_id: String, scheme_id: String) -> Result<CircuitTestResult, String> {
     let cfg = config::load().ok_or("NOT_CONFIGURED")?;
     if !game::is_available() {
         return Err("GAME_NOT_DETECTED".into());
     }
     let game_dir = game::detect().ok_or("GAME_NOT_DETECTED")?;
 
-    let exe = std::env::current_exe().map_err(|e| format!("VERIFY_LOCATE|{e}"))?;
-    let verify = exe.with_file_name("verify.exe");
-    if !verify.is_file() {
-        return Err(format!("VERIFY_NOT_FOUND|{}", verify.display()));
+    let exe = std::env::current_exe().map_err(|e| format!("TEST_LOCATE|{e}"))?;
+    let test_exe = exe.with_file_name("test.exe");
+    if !test_exe.is_file() {
+        return Err(format!("TEST_NOT_FOUND|{}", test_exe.display()));
     }
 
-    let output = std::process::Command::new(&verify)
+    let output = std::process::Command::new(&test_exe)
         .arg("--game")
         .arg(&game_dir)
         .arg("--save")
@@ -250,12 +250,12 @@ fn verify_circuit(level_id: String, scheme_id: String) -> Result<VerifyResult, S
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map_err(|e| format!("VERIFY_SPAWN_FAILED|{}|{e}", verify.display()))?
+        .map_err(|e| format!("TEST_SPAWN_FAILED|{}|{e}", test_exe.display()))?
         .wait_with_output()
-        .map_err(|e| format!("VERIFY_WAIT_FAILED|{e}"))?;
+        .map_err(|e| format!("TEST_WAIT_FAILED|{e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    serde_json::from_str(&stdout).map_err(|e| format!("VERIFY_PARSE_FAILED|{e}|{stdout}"))
+    serde_json::from_str(&stdout).map_err(|e| format!("TEST_PARSE_FAILED|{e}|{stdout}"))
 }
 
 // ===== 角色替换（character.rs） =====
@@ -379,7 +379,7 @@ pub fn run() {
             list_schematics,
             read_circuit,
             write_circuit,
-            verify_circuit,
+            test_circuit,
             character_status,
             list_characters,
             create_character,

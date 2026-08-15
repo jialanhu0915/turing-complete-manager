@@ -1,7 +1,7 @@
 //! Game install detection: returns the path to `Turing Complete.exe` when a
-//! Steam library contains it, plus `compile.dll` and `campaign/`. The validation
-//! feature (`verify_circuit` tauri command) is gated on this — without the
-//! game's `compile.dll` + `campaign/<level>/test.si` we can't verify circuits.
+//! Steam library contains it, plus `compile.dll` and `campaign/`. The testing
+//! feature (`test_circuit` tauri command) is gated on this — without the
+//! game's `compile.dll` + `campaign/<level>/test.si` we can't test circuits.
 //!
 //! Reuses `translations::detect_game_dir` (Steam registry + libraryfolders.vdf
 //! scan, already wired for the level-name translations).
@@ -18,7 +18,7 @@ pub fn detect() -> Option<PathBuf> {
     Some(dir)
 }
 
-/// `true` iff the game directory has everything validation needs.
+/// `true` iff the game directory has everything testing needs.
 pub fn is_available() -> bool {
     detect().is_some()
 }

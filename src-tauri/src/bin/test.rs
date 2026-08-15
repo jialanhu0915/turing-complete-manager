@@ -1,7 +1,7 @@
-//! `verify` CLI: a process-isolated driver for the circuit validation pipeline.
+//! `test` CLI: a process-isolated driver for the circuit test pipeline.
 //!
 //! ```text
-//! verify --game <game dir> --save <save dir> --level <level> --scheme <scheme>
+//! test --game <game dir> --save <save dir> --level <level> --scheme <scheme>
 //! ```
 //!
 //! Each invocation loads `compile.dll` + `sim-shim.dll` into a fresh process,
@@ -14,7 +14,7 @@
 //!
 //! Why a separate process: `compile.dll` is single-shot per process. A
 //! long-running tauri app that loaded it directly would only get one
-//! validation call before failing forever. Spawning a fresh `verify` per
+//! test call before failing forever. Spawning a fresh `test` per
 //! request side-steps this.
 
 use std::path::PathBuf;
@@ -35,7 +35,7 @@ fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("usage: verify --game <dir> --save <dir> --level <id> --scheme <name>");
+            eprintln!("usage: test --game <dir> --save <dir> --level <id> --scheme <name>");
             eprintln!("error: {e}");
             return ExitCode::from(2);
         }
@@ -61,7 +61,7 @@ fn main() -> ExitCode {
     match serde_json::to_string(&out) {
         Ok(s) => println!("{s}"),
         Err(e) => {
-            eprintln!("verify: failed to serialize output: {e}");
+            eprintln!("test: failed to serialize output: {e}");
             return ExitCode::from(1);
         }
     }
