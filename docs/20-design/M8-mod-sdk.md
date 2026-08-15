@@ -37,7 +37,7 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 | `bin/test.rs` | 1 | `circuit` + `dll` | 消费方，改 import 指向 crate |
 | `sim-shim/` | 37 | Nim + Python（构建 shim.dll + 测试夹具） | 无 |
 
-已接线：lib.rs 加 `pub mod circuit/dll` + 5 个 Tauri 命令（`is_game_available`/`list_schematics`/`read_circuit`/`write_circuit`/`test_circuit`）；Cargo.toml 加 `snap`/`libloading`。`cargo check --lib --bins` 通过（8 个 pre-existing warning）。
+已接线：lib.rs 加 3 个电路读写 Tauri 命令（`list_schematics`/`read_circuit`/`write_circuit`，供前端未来电路编辑器使用）；验证能力下沉到 `test.exe` CLI（独立进程），不在前端暴露。`cargo check --lib --bins` 通过（8 个 pre-existing warning）。
 
 ---
 
@@ -86,7 +86,7 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 | M8-0 | 新分支 + 搬运 test/verify-cli 有用代码 | ✅ commit `17bd042` |
 | M8-1 | 抽 crate（circuit/ + dll/ → tc-mod-sdk）+ 解耦 + path dep | ✅ |
 | M8-2 | 验证：cargo check + codec round-trip + test CLI 实测 | ✅（and_gate / or_gate / not_gate / xor_gate / full_adder / bit_adder pass；byte_adder 已知限制） |
-| M8-3 | 前端验证 UI section | ✅（电路测试视图，深色适配已修） |
+| M8-3 | 前端验证 UI section | 🗑️ 撤销（2026-08-15）—— 验证归入 `test.exe` CLI，不通过前端 |
 | M8-4 | and_gate 起步示例 + README + byte_adder 已知限制记录 | ✅（cargo publish 暂停） |
 | **M8-5** | **Hook 层（`tc-mod-hook` crate）—— 劫持 `compile.dll::compile` 改写游戏行为** | 🆕 M9 调研后追加，待 PoC |
 
@@ -98,7 +98,7 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 |---|---|---|
 | crate 引入方式 | Cargo workspace vs path dependency | **path dependency**（避免 Tauri workspace 复杂度） |
 | crate 发布名 | `tc-mod-sdk` / `tc-circuit-sdk` / 其他 | `tc-mod-sdk` |
-| 前端 test UI 是否纳入本期 | 纳入 / defer | defer（先抽 crate + 后端验证跑通） |
+| 前端 test UI 是否纳入本期 | 纳入 / defer | **不纳入**（2026-08-15 决定）：验证能力已下沉到 `test.exe` CLI，作为 SDK 一部分；前端不再触发 |
 
 ---
 

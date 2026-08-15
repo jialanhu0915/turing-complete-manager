@@ -60,7 +60,6 @@
             <button type="button" class="nav-item" data-view="character" data-i18n="SIDEBAR_CHARACTER">角色</button>
             <button type="button" class="nav-item" data-view="levels" data-i18n="SIDEBAR_LEVELS">关卡</button>
             <button type="button" class="nav-item" data-view="config" data-i18n="SIDEBAR_CONFIG">配置</button>
-            <button type="button" class="nav-item" data-view="test" data-i18n="SIDEBAR_TEST">测试</button>
           </nav>
           <a id="sidebar-qq" class="sidebar-link"
              href="https://qm.qq.com/q/YmfM5Y7YUo"
@@ -190,24 +189,6 @@
               <button type="button" id="auto-save" class="primary" data-i18n="AUTO_SAVE">保存自动备份设置</button>
               <span class="hint inline" id="auto-status">—</span>
             </div>
-          </section>
-
-          <section class="view" data-view="test" hidden>
-            <h2 data-i18n="TEST_TITLE" class="view-title">电路测试</h2>
-            <p class="hint" data-i18n="TEST_HINT">用游戏自带的 test.si 验证某个存档电路是否通过关卡测试。需要游戏本体（compile.dll + campaign/）。</p>
-            <div id="test-game-missing" class="hint warn" hidden data-i18n="TEST_GAME_MISSING">未检测到游戏本体，无法测试。请先在「配置」里设置游戏目录。</div>
-            <div class="action-row">
-              <label class="test-field">
-                <span data-i18n="TEST_LEVEL">关卡</span>
-                <select id="test-level"></select>
-              </label>
-              <label class="test-field">
-                <span data-i18n="TEST_SCHEME">方案</span>
-                <select id="test-scheme"></select>
-              </label>
-              <button type="button" id="test-run" class="primary" data-i18n="TEST_RUN">测试电路</button>
-            </div>
-            <div id="test-result" class="test-result" hidden></div>
           </section>
         </div>
       </section>

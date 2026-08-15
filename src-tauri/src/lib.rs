@@ -11,8 +11,6 @@ mod config;
 mod levels;
 mod translations;
 
-mod game;
-
 use tc_mod_sdk::circuit;
 
 #[derive(Serialize)]
@@ -153,23 +151,7 @@ fn list_level_names() -> translations::LevelNames {
     translations::load_level_names()
 }
 
-// ===== 电路验证（circuit.rs / dll.rs / game.rs，来自 test/verify-cli） =====
-
-/// `true` iff Turing Complete is installed and complete (has `compile.dll` +
-/// `campaign/`). Gates the validation UI.
-#[tauri::command]
-fn is_game_available() -> bool {
-    game::is_available()
-}
-
-/// Result of a test_circuit invocation (parsed from the test CLI's JSON).
-#[derive(serde::Deserialize, serde::Serialize)]
-struct CircuitTestResult {
-    ok: bool,
-    test_result: u64,
-    cycles_run: i64,
-    error: Option<String>,
-}
+// ===== 电路读写（circuit codec 暴露给前端用） =====
 
 #[tauri::command]
 fn list_schematics(level_id: String) -> Result<Vec<String>, String> {
@@ -222,50 +204,6 @@ fn write_circuit(
     std::fs::create_dir_all(&dir).map_err(|e| format!("CIRCUIT_DIR_FAILED|{e}"))?;
     std::fs::write(dir.join("circuit.data"), bytes)
         .map_err(|e| format!("CIRCUIT_WRITE_FAILED|{e}"))
-}
-
-#[tauri::command]
-fn test_circuit(level_id: String, scheme_id: String) -> Result<CircuitTestResult, String> {
-    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
-    if !game::is_available() {
-        return Err("GAME_NOT_DETECTED".into());
-    }
-    let game_dir = game::detect().ok_or("GAME_NOT_DETECTED")?;
-
-    let exe = std::env::current_exe().map_err(|e| format!("TEST_LOCATE|{e}"))?;
-    let test_exe = exe.with_file_name("test.exe");
-    if !test_exe.is_file() {
-        return Err(format!("TEST_NOT_FOUND|{}", test_exe.display()));
-    }
-
-    let output = std::process::Command::new(&test_exe)
-        // 把游戏目录加进 PATH：test.exe 里的 shim.dll 用 dynlib 按名加载
-        // compile.dll，而 compile.dll 只在游戏目录里，不在系统 PATH。
-        .env(
-            "PATH",
-            format!(
-                "{};{}",
-                game_dir.display(),
-                std::env::var("PATH").unwrap_or_default()
-            ),
-        )
-        .arg("--game")
-        .arg(&game_dir)
-        .arg("--save")
-        .arg(&cfg.save_dir)
-        .arg("--level")
-        .arg(&level_id)
-        .arg("--scheme")
-        .arg(&scheme_id)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("TEST_SPAWN_FAILED|{}|{e}", test_exe.display()))?
-        .wait_with_output()
-        .map_err(|e| format!("TEST_WAIT_FAILED|{e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    serde_json::from_str(&stdout).map_err(|e| format!("TEST_PARSE_FAILED|{e}|{stdout}"))
 }
 
 // ===== 角色替换（character.rs） =====
@@ -385,11 +323,9 @@ pub fn run() {
             list_levels,
             save_levels,
             list_level_names,
-            is_game_available,
             list_schematics,
             read_circuit,
             write_circuit,
-            test_circuit,
             character_status,
             list_characters,
             create_character,

@@ -38,8 +38,7 @@
     "targets": ["msi"],
     "resources": {
       "./default_characters/steve/*": "default_characters/steve/",
-      "./default_characters/robot/*": "default_characters/robot/",
-      "../sim-shim/shim.dll": "shim.dll"
+      "./default_characters/robot/*": "default_characters/robot/"
     },
     "icon": [
       "icons/32x32.png",
