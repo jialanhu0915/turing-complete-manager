@@ -1,8 +1,8 @@
 ---
 title: 关卡与存档数据
-last_updated: 2026-08-11
+last_updated: 2026-08-15
 scope: investigation
-status: 已审（2026-08-11 实测 campaign 目录：98 关卡；hint 多步提示系统补全；§2.2.1 meta.txt 字段 Wiki + 实测综合，~30 字段）
+status: 已审（2026-08-11 实测 campaign 目录：98 关卡；hint 多步提示系统补全；§2.2.1 meta.txt 字段 Wiki + 实测综合，~30 字段；2026-08-15 纠正：非 Godot，Nim + ImGui 自研引擎）
 ---
 
 # 关卡与存档数据
@@ -134,17 +134,17 @@ Steam 云同步标记，由 Steam 客户端管理，本项目不读不写。
 
 ```
 E:\SteamLibrary\steamapps\common\Turing Complete\
-├── Turing Complete.exe            # 15.8 MB，Godot 主程序
+├── Turing Complete.exe            # 15.8 MB，Nim 2.2.6 主程序
 ├── compile.dll                    # 1.78 MB，Nim 编译器（已单独分析）
-├── game_engine.dll                # 1.99 MB，Godot 引擎包装（已单独分析）
-├── replay.nim                     # 79 MB，运行时重放脚本（已单独分析）
+├── game_engine.dll                # 1.99 MB，C++ ImGui/OpenGL3 自研引擎（已单独分析）
+├── replay.nim                     # 79 MB，运行时生成的仿真驱动器（已单独分析）
 ├── libgcc_s_seh-1.dll            # 83 KB，GCC 运行时
 ├── libwinpthread-1.dll           # 55 KB，pthread 库
 ├── soft_oal.dll                   # 2.1 MB，OpenAL 软实现（音频）
 ├── steam_api64.dll                # 309 KB，Steamworks SDK
 ├── asset/                         # 游戏内图片、字体、声音等
 ├── campaign/                      # 关卡定义（98 个子目录 + .png 资源）
-├── godot/                         # Godot 引擎资源
+├── godot/                         # 已废弃（空壳，仅 app_userdata/）
 └── translations/                  # i18n 翻译
 ```
 
@@ -358,9 +358,9 @@ INI-like key-value 格式（2026-08-11 校对：来源 wiki `Custom_level_creati
 - **务必备份 `campaign/main/`** 目录以便恢复
 - 想避免冲突：可以先用 `load <level_id>` 在游戏内加载关卡测试，最后再 `save_level` 写回地图
 
-### 2.3 `godot/`
+### 2.3 `godot/`（已废弃）
 
-Godot 引擎的 Pck 文件（资源包）。本项目不需要访问。
+遗留空目录（仅 `app_userdata/`，无资源文件）。游戏已从 Godot 迁移到 Nim 自研引擎，此目录无实际内容，本项目不需要访问。
 
 ### 2.4 `translations/`
 
@@ -397,7 +397,7 @@ Godot 引擎的 Pck 文件（资源包）。本项目不需要访问。
        ┌─────────────────────────────────────────────────────┐
        │                  游戏运行时                         │
        │   ┌─────────────┐       ┌──────────────────┐       │
-       │   │   Godot     │ ◀───▶ │   compile.dll    │       │
+       │   │   Nim       │ ◀───▶ │   compile.dll    │       │
        │   │   主程序     │       │   (Nim 编译器)   │       │
        │   │             │       │                  │       │
        │   │   读取       │       │   编译 + 执行    │       │

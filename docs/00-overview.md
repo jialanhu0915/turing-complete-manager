@@ -1,8 +1,8 @@
 ---
 title: 项目总览
-last_updated: 2026-08-11
+last_updated: 2026-08-15
 scope: overview
-status: 已审（2026-08-10 整合 Stuffe 官方仓库；2026-08-11 实测 tc_save_monger 不可用）
+status: 已审（2026-08-10 整合 Stuffe 官方仓库；2026-08-11 实测 tc_save_monger 不可用；2026-08-15 纠正引擎：非 Godot，Nim + ImGui 自研）
 ---
 
 # 项目总览
@@ -10,7 +10,7 @@ status: 已审（2026-08-10 整合 Stuffe 官方仓库；2026-08-11 实测 tc_sa
 ## 是什么
 
 `turing-complete-manager` 是一个 **Steam 游戏 Turing Complete 的第三方存档管理器**。
-游戏本身用 Godot 引擎实现，存档以纯文本 (`levels.txt`)、二进制 (`circuit.data`)、
+游戏本身用 Nim 实现（自研 ImGui/OpenGL3 渲染外壳），存档以纯文本 (`levels.txt`)、二进制 (`circuit.data`)、
 注册表 (`HKCU\Software\Turing Complete`) 多种形式散落在 Windows 用户目录。
 
 本项目提供一个 Tauri 2 桌面应用，UI 用原生 TypeScript（无框架），用于：
@@ -29,9 +29,9 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 | 文件 | 大小 | 性质 |
 |---|---|---|
 | `compile.dll` | 1.78 MB | Nim 编译产物，内嵌 LLVM 后端 |
-| `game_engine.dll` | 1.99 MB | Godot 引擎 C-ABI 薄包装 |
+| `game_engine.dll` | 1.99 MB | C++(MSVC) + Dear ImGui + OpenGL3 自研渲染/UI 引擎 |
 | `replay.nim` | 79 MB / 227 万行 | **可被 `compile.dll` 编译执行的 Nim 源** |
-| `Turing Complete.exe` | 15.8 MB | Godot 主程序 |
+| `Turing Complete.exe` | 15.8 MB | Nim 2.2.6 主程序 |
 
 它们提供了「让大模型对电路做优化」的潜在切入点。本次调研的目的是：
 
@@ -56,7 +56,7 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 
 - ❌ 实际调用 `compile.dll` 驱动游戏本体（`compile` 函数签名未确定）
 - ❌ ~~Rust 移植 codec 到 Tauri app~~ → ❌ **实测 [2026-08-11]：`tc_save_monger` 0.4.5 不可用**（v6-only，详见 `10-investigation/circuit-data-format.md` §W-2）
-- ❌ `replay.nim` 解析器（**当前不需要**——`replay.nim` 只是仿真录屏，不直接服务电路优化）
+- ❌ `replay.nim` 解析器（**当前不需要**——`replay.nim` 只是运行时生成的仿真驱动器，不直接服务电路优化）
 - ❌ CLI 工具 + LLM 优化循环
 - ❌ 修改游戏本体 / Steam Cloud 同步 / `levels.txt`（已与游戏自己维护机制冲突）
 
@@ -69,7 +69,7 @@ M1–M6 已完成，详见 `CHANGELOG` / `README.md`。
 | 玩家电路 (circuit) | 关卡内玩家拼出的逻辑电路 |
 | 关卡 (level) | 一个 puzzle，有输入/输出 pin 与目标 |
 | 存档 (save) | 玩家进度的本地持久化 |
-| replay | 游戏一次会话的执行轨迹，序列化到 `replay.nim` |
+| replay | 游戏运行时生成的仿真驱动器（Nim 源，每次操作重写），由 `compile.dll` 编译执行 |
 | compile.dll | Nim 编译器 + LLVM 后端的 DLL，可运行时编译 `.nim` |
 | simulator state | 仿真器通过 `Ptr` 暴露给嵌入代码的内存区域 |
 | `Bits` / `Bytes` | save_monger 的 Nim 强类型包装（围绕 `int`）—— 二进制上就是 i64 |

@@ -1,8 +1,8 @@
 ---
 title: DLL 静态分析（compile.dll & game_engine.dll）
-last_updated: 2026-08-08
+last_updated: 2026-08-15
 scope: investigation
-status: 已审（compile.dll 已重做签名调研）
+status: 已审（compile.dll 已重做签名调研；2026-08-15 纠正 game_engine.dll：非 Godot，C++ ImGui/OpenGL3）
 ---
 
 # DLL 静态分析
@@ -12,7 +12,7 @@ status: 已审（compile.dll 已重做签名调研）
 | DLL | 大小 | 平台 | 性质 |
 |---|---|---|---|
 | `compile.dll` | 1,786,818 B (1.78 MB) | x86-64 | Nim 编译器 + LLVM 后端 + 仿真器运行时 |
-| `game_engine.dll` | 1,988,608 B (1.99 MB) | x86-64 | Godot 引擎的 C-ABI 薄包装 |
+| `game_engine.dll` | 1,988,608 B (1.99 MB) | x86-64 | C++(MSVC) + Dear ImGui + OpenGL3 自研渲染/UI 引擎 |
 
 文件位置：`E:\SteamLibrary\steamapps\common\Turing Complete\`
 
@@ -186,7 +186,7 @@ Rust 端 `libloading::Library::new("shim.dll")?` + 调用 `tcc_compile`。
 
 ### 性质
 
-Godot 引擎的 C-ABI 薄包装层。**只关心窗口/输入事件**，对电路语义无直接价值。
+C++(MSVC) + Dear ImGui + OpenGL3 自研渲染/UI 引擎层。**只关心窗口/输入事件**，对电路语义无直接价值。
 
 ### 完整导出清单（10 个）
 

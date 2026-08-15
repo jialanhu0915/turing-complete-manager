@@ -1,8 +1,8 @@
 ---
 title: replay.nim 格式分析
-last_updated: 2026-08-08
+last_updated: 2026-08-15
 scope: investigation
-status: 已审
+status: 已审（2026-08-15 校准 replay.nim 描述：运行时生成的仿真驱动器）
 ---
 
 # `replay.nim` 格式分析
@@ -231,7 +231,7 @@ var settings = Ptr "${settings}"
 2. **让 LLM 生成新的 `circuit.data`** —— 或在游戏 UI 自动化操作生成
 3. **驱动游戏跑仿真并读 `sim_test_result`** —— 可以通过 `compile.dll` 模拟、或操作游戏 UI
 
-`replay.nim` 本身只是「游戏录屏」式的中间产物，不直接服务优化目标。
+`replay.nim` 本身只是「运行时生成的仿真驱动器」式的中间产物，不直接服务优化目标。
 
 ### 仍待回答
 
