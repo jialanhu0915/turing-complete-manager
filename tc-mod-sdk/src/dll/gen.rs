@@ -595,39 +595,39 @@ def get_component_count(component_type: ComponentType) Int {
 }
 def ui_set_position(id: String, x: Int, y: Int) {
     switch id
-        "table" { store(.ui_buffer + 8, U64 (x << 16 | (y & 0xffff))) }
+        case "table" { store(.ui_buffer + 8, U64 (x << 16 | (y & 0xffff))) }
 }
 def ui_set_width(id: String, value: Int) {
     switch id
 }
 def ui_set_hidden(id: String, value: Bool) {
     switch id
-        "table[0][0]" { store(.ui_buffer + 88, U64 value) }
-        "table[0][1]" { store(.ui_buffer + 96, U64 value) }
-        "table[1][0]" { store(.ui_buffer + 104, U64 value) }
-        "table[1][1]" { store(.ui_buffer + 112, U64 value) }
-        "table[2][0]" { store(.ui_buffer + 120, U64 value) }
-        "table[2][1]" { store(.ui_buffer + 128, U64 value) }
-        "table[3][0]" { store(.ui_buffer + 136, U64 value) }
-        "table[3][1]" { store(.ui_buffer + 144, U64 value) }
-        "table[4][0]" { store(.ui_buffer + 152, U64 value) }
-        "table[4][1]" { store(.ui_buffer + 160, U64 value) }
-        "table" { store(.ui_buffer + 0, U64 value) }
+        case "table[0][0]" { store(.ui_buffer + 88, U64 value) }
+        case "table[0][1]" { store(.ui_buffer + 96, U64 value) }
+        case "table[1][0]" { store(.ui_buffer + 104, U64 value) }
+        case "table[1][1]" { store(.ui_buffer + 112, U64 value) }
+        case "table[2][0]" { store(.ui_buffer + 120, U64 value) }
+        case "table[2][1]" { store(.ui_buffer + 128, U64 value) }
+        case "table[3][0]" { store(.ui_buffer + 136, U64 value) }
+        case "table[3][1]" { store(.ui_buffer + 144, U64 value) }
+        case "table[4][0]" { store(.ui_buffer + 152, U64 value) }
+        case "table[4][1]" { store(.ui_buffer + 160, U64 value) }
+        case "table" { store(.ui_buffer + 0, U64 value) }
 }
 def ui_set_size(id: String, value: Int) {
     switch id
-        "table" { store(.ui_buffer + 40, U64 value) }
+        case "table" { store(.ui_buffer + 40, U64 value) }
 }
 def ui_set_column_header_size(id: String, value: Int) {
     switch id
 }
 def ui_set_row_header_size(id: String, value: Int) {
     switch id
-        "table" { store(.ui_buffer + 56, U64 value) }
+        case "table" { store(.ui_buffer + 56, U64 value) }
 }
 def ui_set_color(id: String, value: Int) {
     switch id
-        "table" { store(.ui_buffer + 48, U64 value) }
+        case "table" { store(.ui_buffer + 48, U64 value) }
 }
 def ui_set_address_color(id: String, value: Int) {
     switch id
@@ -643,20 +643,20 @@ def ui_set_column_header_color(id: String, value: Int) {
 }
 def ui_set_row_header_color(id: String, value: Int) {
     switch id
-        "table" { store(.ui_buffer + 64, U64 value) }
+        case "table" { store(.ui_buffer + 64, U64 value) }
 }
 def ui_set_text(id: String, text: String) {
     switch id
-        "table[0][0]" { set_text(text, 10000) }
-        "table[0][1]" { set_text(text, 20000) }
-        "table[1][0]" { set_text(text, 30000) }
-        "table[1][1]" { set_text(text, 40000) }
-        "table[2][0]" { set_text(text, 50000) }
-        "table[2][1]" { set_text(text, 60000) }
-        "table[3][0]" { set_text(text, 70000) }
-        "table[3][1]" { set_text(text, 80000) }
-        "table[4][0]" { set_text(text, 90000) }
-        "table[4][1]" { set_text(text, 100000) }
+        case "table[0][0]" { set_text(text, 10000) }
+        case "table[0][1]" { set_text(text, 20000) }
+        case "table[1][0]" { set_text(text, 30000) }
+        case "table[1][1]" { set_text(text, 40000) }
+        case "table[2][0]" { set_text(text, 50000) }
+        case "table[2][1]" { set_text(text, 60000) }
+        case "table[3][0]" { set_text(text, 70000) }
+        case "table[3][1]" { set_text(text, 80000) }
+        case "table[4][0]" { set_text(text, 90000) }
+        case "table[4][1]" { set_text(text, 100000) }
 }
 def ui_set_image_name(id: String, text: String) {
     switch id
