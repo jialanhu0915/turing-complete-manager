@@ -329,7 +329,15 @@ fn emit_circuit_sim(
             .filter(|(_, c)| is_level_output(c.kind))
             .map(|(i, _)| i)
             .collect();
-        idxs.sort_by_key(|&i| (components[i].position.0, components[i].position.1));
+        // 输出字段顺序由 check_output 决定（byte_adder 实测：carry_out(U1) 先于
+        // output(U8)），故按 word_size 升序匹配，再按位置做同宽度消歧。
+        idxs.sort_by_key(|&i| {
+            (
+                components[i].word_size,
+                components[i].position.0,
+                components[i].position.1,
+            )
+        });
         for idx in idxs {
             let comp = &components[idx];
             let f = if comp.kind == 112 {
@@ -806,11 +814,12 @@ fn gate_components(circuit: &Circuit) -> usize {
 /// A level may have z-flag fields in `check_output` but no z probe in the
 /// circuit; in that case the field is left at the struct default (false).
 fn correct_output_types(mut tpl: LevelTemplate, circuit: &Circuit) -> Result<LevelTemplate, String> {
-    let value_comps: Vec<&Component> = circuit
+    let mut value_comps: Vec<&Component> = circuit
         .components
         .iter()
         .filter(|c| is_level_output(c.kind) && c.kind != 112)
         .collect();
+    value_comps.sort_by_key(|c| (c.word_size, c.position.0, c.position.1));
     let z_comps: Vec<&Component> = circuit
         .components
         .iter()
