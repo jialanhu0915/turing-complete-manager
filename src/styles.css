@@ -591,6 +591,44 @@ tr.active-row {
   font-weight: 600;
 }
 
+/* 电路测试 */
+.test-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.test-field select {
+  min-width: 150px;
+  padding: 6px 8px;
+  font: inherit;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background-color: #fff;
+  color: inherit;
+}
+
+.test-result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #6a737d;
+  border-radius: 0 4px 4px 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.test-result.pass {
+  border-left-color: #2ea043;
+  background-color: #dafbe1;
+  color: #116329;
+}
+
+.test-result.fail {
+  border-left-color: #da3633;
+  background-color: #ffebe9;
+  color: #82071e;
+}
+
 @keyframes view-fade {
   from { opacity: 0.6; }
   to   { opacity: 1; }

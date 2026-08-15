@@ -52,10 +52,17 @@ interface GameDirStatus {
   exists: boolean;
 }
 
+interface CircuitTestResult {
+  ok: boolean;
+  test_result: number;
+  cycles_run: number;
+  error: string | null;
+}
+
 let cfg: AppConfig | null = null;
 let currentStep = 1;
 
-type ViewName = "backup" | "character" | "levels" | "config";
+type ViewName = "backup" | "character" | "levels" | "config" | "test";
 
 /** 切换主页面内的 view（侧栏点击触发）。隐藏非激活 view + 更新侧栏高亮。 */
 function switchView(name: ViewName): void {
@@ -68,6 +75,9 @@ function switchView(name: ViewName): void {
     if (isActive) btn.setAttribute("aria-current", "page");
     else btn.removeAttribute("aria-current");
   });
+  if (name === "test") {
+    refreshTestView().catch((e) => console.error("refreshTestView failed:", e));
+  }
 }
 
 function $<T extends HTMLElement>(sel: string): T {
@@ -566,6 +576,111 @@ async function saveLevelChanges(): Promise<void> {
   }
 }
 
+// ===== 电路测试 =====
+
+let testGameAvailable = false;
+
+async function refreshTestView(): Promise<void> {
+  const missing = $("#test-game-missing");
+  const runBtn = $<HTMLButtonElement>("#test-run");
+  try {
+    testGameAvailable = await invoke<boolean>("is_game_available");
+  } catch {
+    testGameAvailable = false;
+  }
+  missing.hidden = testGameAvailable;
+  // 复用全局 levelRows / levelNames；未加载则先加载
+  if (levelRows.length === 0) {
+    try {
+      const [rows, names] = await Promise.all([
+        invoke<LevelRow[]>("list_levels"),
+        invoke<Record<string, LevelName>>("list_level_names"),
+      ]);
+      levelRows = rows;
+      levelNames = new Map(Object.entries(names));
+    } catch {
+      // 失败不致命，下拉保持空
+    }
+  }
+  fillTestLevelSelect();
+  runBtn.disabled = !testGameAvailable;
+}
+
+function fillTestLevelSelect(): void {
+  const sel = $<HTMLSelectElement>("#test-level");
+  sel.innerHTML = "";
+  for (const r of levelRows) {
+    const opt = document.createElement("option");
+    opt.value = r.id;
+    opt.textContent = displayName(r.id);
+    sel.appendChild(opt);
+  }
+  if (levelRows.length > 0) {
+    loadTestSchemes(levelRows[0].id);
+  }
+}
+
+async function loadTestSchemes(levelId: string): Promise<void> {
+  const sel = $<HTMLSelectElement>("#test-scheme");
+  sel.innerHTML = "";
+  let schemes: string[] = [];
+  try {
+    schemes = await invoke<string[]>("list_schematics", { levelId });
+  } catch {
+    schemes = [];
+  }
+  if (schemes.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = t("TEST_NO_SCHEME");
+    sel.appendChild(opt);
+    $<HTMLButtonElement>("#test-run").disabled = true;
+    return;
+  }
+  for (const s of schemes) {
+    const opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = s;
+    sel.appendChild(opt);
+  }
+  $<HTMLButtonElement>("#test-run").disabled = !testGameAvailable;
+}
+
+async function runTest(): Promise<void> {
+  const level = $<HTMLSelectElement>("#test-level").value;
+  const scheme = $<HTMLSelectElement>("#test-scheme").value;
+  const resultEl = $("#test-result");
+  resultEl.hidden = false;
+  resultEl.className = "test-result";
+  resultEl.textContent = t("TEST_RUNNING");
+  const btn = $<HTMLButtonElement>("#test-run");
+  btn.disabled = true;
+  try {
+    const r = await invoke<CircuitTestResult>("test_circuit", {
+      levelId: level,
+      schemeId: scheme,
+    });
+    if (r.ok && r.test_result === 0) {
+      resultEl.textContent = t("TEST_PASS", { cycles: r.cycles_run });
+      resultEl.classList.add("pass");
+    } else if (r.ok && r.test_result === 1) {
+      resultEl.textContent = t("TEST_WIN", { cycles: r.cycles_run });
+      resultEl.classList.add("pass");
+    } else if (r.ok) {
+      resultEl.textContent = t("TEST_FAIL", { cycles: r.cycles_run });
+      resultEl.classList.add("fail");
+    } else {
+      resultEl.textContent = t("TEST_ERROR", { err: r.error ?? "" });
+      resultEl.classList.add("fail");
+    }
+  } catch (e) {
+    resultEl.textContent = t("TEST_ERROR", { err: tErr(String(e)) });
+    resultEl.classList.add("fail");
+  } finally {
+    btn.disabled = !testGameAvailable;
+  }
+}
+
 async function switchLanguage(newLang: Locale): Promise<void> {
   if (!cfg) return;
   setLocale(newLang);
@@ -616,6 +731,13 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#levels-search").addEventListener("input", () => {
     levelFilter = $<HTMLInputElement>("#levels-search").value;
     renderLevelRows();
+  });
+  $("#test-run").addEventListener("click", () => {
+    runTest().catch((e) => alert(t("OP_FAILED", { err: tErr(String(e)) })));
+  });
+  $("#test-level").addEventListener("change", () => {
+    const level = $<HTMLSelectElement>("#test-level").value;
+    loadTestSchemes(level).catch((e) => console.error("loadTestSchemes failed:", e));
   });
   $("#auto-save").addEventListener("click", () => {
     saveAutoBackup().catch((e) => alert(t("AUTO_SAVE_FAILED", { err: tErr(String(e)) })));

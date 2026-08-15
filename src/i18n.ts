@@ -145,6 +145,7 @@ const DICT: Record<Locale, Dict> = {
     SIDEBAR_CHARACTER: "角色",
     SIDEBAR_LEVELS: "关卡",
     SIDEBAR_CONFIG: "配置",
+    SIDEBAR_TEST: "测试",
     SIDEBAR_QQ_LABEL: "QQ 群",
 
     // 关卡编辑器
@@ -171,6 +172,21 @@ const DICT: Record<Locale, Dict> = {
     LEVELS_SAVE_DONE: "保存完成。\n原文件已备份：{name}",
     LEVELS_SAVE_FAILED: "保存失败：{err}",
     LEVELS_LOAD_FAILED_ALERT: "读取失败：{err}",
+
+    // 电路测试
+    TEST_TITLE: "电路测试",
+    TEST_HINT:
+      "用游戏自带的 test.si 验证某个存档电路是否通过关卡测试。需要游戏本体（compile.dll + campaign/）。",
+    TEST_GAME_MISSING: "未检测到游戏本体，无法测试。请先在「配置」里设置游戏目录。",
+    TEST_LEVEL: "关卡",
+    TEST_SCHEME: "方案",
+    TEST_RUN: "测试电路",
+    TEST_RUNNING: "测试中…",
+    TEST_PASS: "✅ 通过（{cycles} 周期）",
+    TEST_WIN: "✅ 通过 win（{cycles} 周期）",
+    TEST_FAIL: "❌ 失败（{cycles} 周期）",
+    TEST_ERROR: "⚠️ 出错：{err}",
+    TEST_NO_SCHEME: "（该关卡无存档方案）",
 
     // 角色替换
     CHARACTER_TITLE: "角色替换（mentor 对话人物）",
@@ -360,6 +376,7 @@ const DICT: Record<Locale, Dict> = {
     SIDEBAR_CHARACTER: "Characters",
     SIDEBAR_LEVELS: "Levels",
     SIDEBAR_CONFIG: "Settings",
+    SIDEBAR_TEST: "Test",
     SIDEBAR_QQ_LABEL: "QQ Group",
 
     LEVELS_TITLE: "Level editor (levels.txt)",
@@ -385,6 +402,22 @@ const DICT: Record<Locale, Dict> = {
     LEVELS_SAVE_DONE: "Save complete.\nOriginal file backed up: {name}",
     LEVELS_SAVE_FAILED: "Save failed: {err}",
     LEVELS_LOAD_FAILED_ALERT: "Load failed: {err}",
+
+    // Circuit test
+    TEST_TITLE: "Circuit Test",
+    TEST_HINT:
+      "Validate a saved circuit against the game's test.si. Requires the game (compile.dll + campaign/).",
+    TEST_GAME_MISSING:
+      "Game not detected. Set the game directory in Settings first.",
+    TEST_LEVEL: "Level",
+    TEST_SCHEME: "Scheme",
+    TEST_RUN: "Test circuit",
+    TEST_RUNNING: "Testing…",
+    TEST_PASS: "✅ Pass ({cycles} cycles)",
+    TEST_WIN: "✅ Pass — win ({cycles} cycles)",
+    TEST_FAIL: "❌ Fail ({cycles} cycles)",
+    TEST_ERROR: "⚠️ Error: {err}",
+    TEST_NO_SCHEME: "(no saved scheme for this level)",
 
     // Character replacement
     CHARACTER_TITLE: "Character replacement (mentor dialogue portraits)",

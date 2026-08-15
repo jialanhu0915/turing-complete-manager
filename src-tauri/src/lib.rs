@@ -239,6 +239,16 @@ fn test_circuit(level_id: String, scheme_id: String) -> Result<CircuitTestResult
     }
 
     let output = std::process::Command::new(&test_exe)
+        // 把游戏目录加进 PATH：test.exe 里的 shim.dll 用 dynlib 按名加载
+        // compile.dll，而 compile.dll 只在游戏目录里，不在系统 PATH。
+        .env(
+            "PATH",
+            format!(
+                "{};{}",
+                game_dir.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
         .arg("--game")
         .arg(&game_dir)
         .arg("--save")
