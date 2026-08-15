@@ -713,14 +713,14 @@ run_sim: while true {
         set_setting(sim_last_command_id, last_command_id)
         var command = SimCommand get_command(ctl_command)
         switch command
-            run {
+            case run {
                 var target_cycle = Int get_setting(sim_target_cycle)
                 set_setting(sim_running, U64 1)
                 mode_run(target_cycle)
                 set_setting(sim_running, U64 0)
             }
-            refresh {}
-            mode_reset {
+            case refresh {}
+            case mode_reset {
                 var i = 0
                 while i < 1024 {
                     input_replay[i] = 0
@@ -728,7 +728,7 @@ run_sim: while true {
                 }
                 break
             }
-            quit_simulation {
+            case quit_simulation {
                 break run_sim // We need to break out instead of thread_exit() to make sure everything is cleaned up
             }
     }
