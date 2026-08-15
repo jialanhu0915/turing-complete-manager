@@ -281,7 +281,13 @@ fn pin_specs_for(component: &Component) -> Option<Vec<PinSpec>> {
         return Some(vec![pin("out".to_string(), Output, 3, 0, None)]);
     }
     if component.kind == 61 {
-        return Some(vec![pin("value".to_string(), Output, 3, 0, None)]);
+        let n = component.word_size.max(1) as i16;
+        if n == 1 {
+            return Some(vec![pin("value".to_string(), Output, 3, 0, None)]);
+        }
+        // 字输入暴露 N 个 bit 引脚（byte_adder 实测：x 偏移 +6，y 偏移 2-n/2 .. 依次 +1）。
+        // bit0 在最小 y（顶部），bitN 在最大 y（底部）。
+        return Some(stacked("bit", Output, 6, 2 - n / 2, n));
     }
     if component.kind == 62 {
         return Some(vec![
@@ -316,7 +322,12 @@ fn pin_specs_for(component: &Component) -> Option<Vec<PinSpec>> {
         ]);
     }
     if component.kind == 69 {
-        return Some(vec![pin("value".to_string(), Input, -3, 0, None)]);
+        let n = component.word_size.max(1) as i16;
+        if n == 1 {
+            return Some(vec![pin("value".to_string(), Input, -3, 0, None)]);
+        }
+        // 字输出暴露 N 个 bit 输入引脚（byte_adder 实测：x 偏移 -5，y 偏移 -13..-6，bit0 在顶部）。
+        return Some(stacked("bit", Input, -5, -13, n));
     }
     if component.kind == 70 {
         return Some(vec![

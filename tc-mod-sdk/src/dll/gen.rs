@@ -295,33 +295,43 @@ fn emit_circuit_sim(
     let mut next_slot = 0usize;
     let mut lines: Vec<String> = Vec::new();
 
-    // Field ↔ component assignment follows the CIRCUIT's Vec order (the order
-    // test.si's fields correspond to), NOT topological order — a topo sort can
-    // reorder outputs (e.g. bit_adder's Sum/Carry) and would misassign them.
+    // Field ↔ component assignment follows the component POSITION (x 升序，再
+    // y 升序)，NOT Vec order — 玩家存档里输入组件的 Vec 顺序可能与 test.si 字段
+    // 顺序不一致（byte_adder 实测：Vec 顺序 Carry in/A/B，但字段顺序 a/b/carry_in）。
     let mut in_fields: HashMap<usize, (String, String)> = HashMap::new();
     {
         let mut fields = tpl.input_fields.iter();
-        for (idx, comp) in components.iter().enumerate() {
-            if is_level_input(comp.kind) {
-                let f = fields.next().ok_or("MISSING_INPUT_FIELD")?.clone();
-                in_fields.insert(idx, f);
-            }
+        let mut idxs: Vec<usize> = components
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| is_level_input(c.kind))
+            .map(|(i, _)| i)
+            .collect();
+        idxs.sort_by_key(|&i| (components[i].position.0, components[i].position.1));
+        for idx in idxs {
+            let f = fields.next().ok_or("MISSING_INPUT_FIELD")?.clone();
+            in_fields.insert(idx, f);
         }
     }
     let mut out_fields: HashMap<usize, (String, String)> = HashMap::new();
     {
         // Output components split by kind: kind 112 = z-flag, others = value.
-        // Vec order within each group maps to the corresponding tpl field list.
+        // 每组内按位置排序映射到对应字段列表。
         let mut value_fields = tpl.output_fields.iter().cloned();
         let mut z_fields = tpl
             .output_z_fields
             .iter()
             .cloned()
             .map(|z| (z, "Bool".to_string()));
-        for (idx, comp) in components.iter().enumerate() {
-            if !is_level_output(comp.kind) {
-                continue;
-            }
+        let mut idxs: Vec<usize> = components
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| is_level_output(c.kind))
+            .map(|(i, _)| i)
+            .collect();
+        idxs.sort_by_key(|&i| (components[i].position.0, components[i].position.1));
+        for idx in idxs {
+            let comp = &components[idx];
             let f = if comp.kind == 112 {
                 z_fields
                     .next()
@@ -387,19 +397,40 @@ fn emit_circuit_sim(
                 .get(&ci)
                 .ok_or("MISSING_OUTPUT_FIELD")?
                 .clone();
-            let in_pin = pins.iter().find(|p| p.direction == PinDir::Input);
-            let src = match in_pin
-                .and_then(|p| driver_slot(p, &net_by_pos, &conn.networks, &out_slot))
-            {
-                Some(slot) => format!("vid{slot}"),
-                None => "0x0".to_string(),
-            };
+            let in_pins: Vec<_> = pins
+                .iter()
+                .filter(|p| p.direction == PinDir::Input)
+                .collect();
             lines.push(cmt);
             if comp.kind == 112 {
-                // z-flag: Bool field, no ftype prefix.
+                // z-flag: Bool field, no ftype prefix（单 pin）。
+                let src = in_pins
+                    .first()
+                    .and_then(|p| driver_slot(p, &net_by_pos, &conn.networks, &out_slot))
+                    .map(|s| format!("vid{s}"))
+                    .unwrap_or_else(|| "0x0".to_string());
                 lines.push(format!(".level_output.{fname} = {src} != 0x0"));
-            } else {
+            } else if in_pins.len() == 1 {
+                let src = driver_slot(in_pins[0], &net_by_pos, &conn.networks, &out_slot)
+                    .map(|s| format!("vid{s}"))
+                    .unwrap_or_else(|| "0x0".to_string());
                 lines.push(format!(".level_output.{fname} = {ftype} {src}"));
+            } else {
+                // 多位输出（字输出）：把 N 个 bit 合并成一个字，bit i → << i（同 maker）。
+                let terms: Vec<String> = in_pins
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| {
+                        let src = driver_slot(p, &net_by_pos, &conn.networks, &out_slot)
+                            .map(|s| format!("vid{s}"))
+                            .unwrap_or_else(|| "0x0".to_string());
+                        format!("(({ftype} {src}) << {i})")
+                    })
+                    .collect();
+                lines.push(format!(
+                    ".level_output.{fname} = {ftype} ({})",
+                    terms.join(" | ")
+                ));
             }
         } else {
             let inputs: Vec<(InputSrc, i64)> = pins
