@@ -504,9 +504,11 @@ mod tests {
 
     #[test]
     fn round_trip_real_v15_file() {
-        // Look for a known player save file. Use the same skip-if-no-game
-        // pattern as `translations::tests::parse_level_names_end_to_end`.
-        let Some(game_save_dir) = crate::config::default_save_dir() else {
+        // Look for a known player save file (env-gated: TC_SAVE_DIR points at
+        // the save dir, e.g. %APPDATA%\Turing Complete). Skips if unset.
+        let Some(game_save_dir) =
+            std::env::var("TC_SAVE_DIR").ok().map(std::path::PathBuf::from)
+        else {
             return;
         };
         let path = game_save_dir

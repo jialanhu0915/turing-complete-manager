@@ -20,8 +20,8 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use turing_complete_manager_lib::circuit;
-use turing_complete_manager_lib::dll::{gen, test_si};
+use tc_mod_sdk::circuit;
+use tc_mod_sdk::dll::{gen, test_si};
 
 #[derive(serde::Serialize)]
 struct Output {
@@ -133,7 +133,7 @@ fn run(args: &Args) -> Result<RunSummary, String> {
 
     // 4. Compile + execute via the high-level runtime. target_cycle = 2050
     //    covers the PRNG/`cycle` truth tables every test.si uses.
-    let report = turing_complete_manager_lib::dll::runtime::run_circuit_test(
+    let report = tc_mod_sdk::dll::runtime::run_circuit_test(
         &args.level,
         &args.scheme,
         &circuit,

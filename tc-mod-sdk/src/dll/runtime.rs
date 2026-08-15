@@ -105,15 +105,11 @@ mod tests {
     #[test]
     #[ignore = "stateful: calls compile.dll::compile (single-use, needs game + shim); run via --ignored"]
     fn end_to_end_compile_invocation() {
-        let shim_path = crate::config::default_save_dir();
         let shim_present = std::path::Path::new("../sim-shim/shim.dll").exists();
         if !shim_present {
             eprintln!("SKIP: sim-shim/shim.dll not built");
             return;
         }
-        // (Save dir check kept just to mirror the skip-if-no-game pattern;
-        // we don't actually need a save dir for shim.)
-        let _ = shim_path;
 
         let shim: &Shim = shim().expect("shim load");
         let mut out = CompileOutput::zeroed();

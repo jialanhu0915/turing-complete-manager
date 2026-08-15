@@ -11,9 +11,9 @@ mod config;
 mod levels;
 mod translations;
 
-pub mod circuit;
-pub mod dll;
 mod game;
+
+use tc_mod_sdk::circuit;
 
 #[derive(Serialize)]
 struct DetectSaveDir {
