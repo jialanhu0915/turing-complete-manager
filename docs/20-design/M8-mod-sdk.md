@@ -9,7 +9,9 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 
 > **一句话定位**：把 `test/verify-cli` 分支上已跑通的「电路 codec + compile.dll 编译执行」能力，从应用内部实现抽取为一个**独立、版本化、可发布的 Rust crate**，作为第三方开发者做 mod 的接口。
 >
-> **心智模型**：不是 Forge 式「进程内注入」（游戏是 Nim/原生，无字节码可 hook），而是**包装游戏自己的元编译管线 + 数据格式**（见 [[game-runtime-architecture]]）。
+> **心智模型**：分两层 —— **SDK 层**（包装游戏自己的元编译管线 + 数据格式，**无需注入游戏进程**）+ **Hook 层**（劫持 `compile.dll::compile` 等已知 ABI，**改写游戏运行时行为**）。两层独立发布，但组合使用构成完整 mod 工具箱。
+>
+> ⚠️ **修正说明（2026-08-15 晚）**：原版「不是 Forge 式『进程内注入』（游戏是 Nim/原生，无字节码可 hook）」是**错误判断**。游戏是单机、无 anti-cheat、`compile.dll` ABI 已知，DLL injection + 函数拦截**完全可行**（详见 [[rev-eng-survey]] §6 修订）。SDK 是稳妥路线，Hook 是激进路线——两者并行而非互斥。
 
 ---
 
@@ -82,10 +84,11 @@ status: 设计中（2026-08-15 起；bring-over 已完成 commit 17bd042，抽 c
 | 阶段 | 工作 | 状态 |
 |---|---|---|
 | M8-0 | 新分支 + 搬运 test/verify-cli 有用代码 | ✅ commit `17bd042` |
-| M8-1 | 抽 crate（circuit/ + dll/ → tc-mod-sdk）+ 解耦 + path dep | 🆕 本次 |
-| M8-2 | 验证：cargo check + codec round-trip + test CLI 实测 | ❌ |
-| M8-3 | 前端验证 UI section（可选，defer） | ❌ |
-| M8-4 | 发布 crates.io + and_gate 起步示例 + README 许可声明 | ❌ M8+1 |
+| M8-1 | 抽 crate（circuit/ + dll/ → tc-mod-sdk）+ 解耦 + path dep | ✅ |
+| M8-2 | 验证：cargo check + codec round-trip + test CLI 实测 | ✅（and_gate / or_gate / not_gate / xor_gate / full_adder / bit_adder pass；byte_adder 已知限制） |
+| M8-3 | 前端验证 UI section | ✅（电路测试视图，深色适配已修） |
+| M8-4 | and_gate 起步示例 + README + byte_adder 已知限制记录 | ✅（cargo publish 暂停） |
+| **M8-5** | **Hook 层（`tc-mod-hook` crate）—— 劫持 `compile.dll::compile` 改写游戏行为** | 🆕 M9 调研后追加，待 PoC |
 
 ---
 
