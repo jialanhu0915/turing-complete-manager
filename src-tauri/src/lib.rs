@@ -11,6 +11,10 @@ mod config;
 mod levels;
 mod translations;
 
+pub mod circuit;
+pub mod dll;
+mod game;
+
 #[derive(Serialize)]
 struct DetectSaveDir {
     default_path: String,
@@ -149,6 +153,111 @@ fn list_level_names() -> translations::LevelNames {
     translations::load_level_names()
 }
 
+// ===== 电路验证（circuit.rs / dll.rs / game.rs，来自 test/verify-cli） =====
+
+/// `true` iff Turing Complete is installed and complete (has `compile.dll` +
+/// `campaign/`). Gates the validation UI.
+#[tauri::command]
+fn is_game_available() -> bool {
+    game::is_available()
+}
+
+/// Result of a verify_circuit invocation (parsed from the verify CLI's JSON).
+#[derive(serde::Deserialize, serde::Serialize)]
+struct VerifyResult {
+    ok: bool,
+    test_result: u64,
+    cycles_run: i64,
+    error: Option<String>,
+}
+
+#[tauri::command]
+fn list_schematics(level_id: String) -> Result<Vec<String>, String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    let dir = Path::new(&cfg.save_dir).join("schematics").join(&level_id);
+    let mut out = Vec::new();
+    if !dir.is_dir() {
+        return Ok(out);
+    }
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("CIRCUIT_LIST_FAILED|{e}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("CIRCUIT_LIST_FAILED|{e}"))?;
+        let name = entry.file_name();
+        let s = name.to_string_lossy();
+        if entry.path().is_dir() && entry.path().join("circuit.data").is_file() {
+            out.push(s.into_owned());
+        } else if let Some(stem) = s.strip_suffix(".circuit") {
+            out.push(stem.to_string());
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+#[tauri::command]
+fn read_circuit(level_id: String, scheme_id: String) -> Result<circuit::model::Circuit, String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    let path = Path::new(&cfg.save_dir)
+        .join("schematics")
+        .join(&level_id)
+        .join(&scheme_id)
+        .join("circuit.data");
+    let bytes = std::fs::read(&path).map_err(|e| format!("CIRCUIT_READ_FAILED|{e}"))?;
+    circuit::codec::decode_circuit(&bytes)
+}
+
+#[tauri::command]
+fn write_circuit(
+    level_id: String,
+    scheme_id: String,
+    payload: circuit::model::Circuit,
+) -> Result<(), String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    let bytes = circuit::codec::encode_v15(&payload)
+        .map_err(|e| format!("CIRCUIT_ENCODE_FAILED|{e}"))?;
+    let dir = Path::new(&cfg.save_dir)
+        .join("schematics")
+        .join(&level_id)
+        .join(&scheme_id);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("CIRCUIT_DIR_FAILED|{e}"))?;
+    std::fs::write(dir.join("circuit.data"), bytes)
+        .map_err(|e| format!("CIRCUIT_WRITE_FAILED|{e}"))
+}
+
+#[tauri::command]
+fn verify_circuit(level_id: String, scheme_id: String) -> Result<VerifyResult, String> {
+    let cfg = config::load().ok_or("NOT_CONFIGURED")?;
+    if !game::is_available() {
+        return Err("GAME_NOT_DETECTED".into());
+    }
+    let game_dir = game::detect().ok_or("GAME_NOT_DETECTED")?;
+
+    let exe = std::env::current_exe().map_err(|e| format!("VERIFY_LOCATE|{e}"))?;
+    let verify = exe.with_file_name("verify.exe");
+    if !verify.is_file() {
+        return Err(format!("VERIFY_NOT_FOUND|{}", verify.display()));
+    }
+
+    let output = std::process::Command::new(&verify)
+        .arg("--game")
+        .arg(&game_dir)
+        .arg("--save")
+        .arg(&cfg.save_dir)
+        .arg("--level")
+        .arg(&level_id)
+        .arg("--scheme")
+        .arg(&scheme_id)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("VERIFY_SPAWN_FAILED|{}|{e}", verify.display()))?
+        .wait_with_output()
+        .map_err(|e| format!("VERIFY_WAIT_FAILED|{e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    serde_json::from_str(&stdout).map_err(|e| format!("VERIFY_PARSE_FAILED|{e}|{stdout}"))
+}
+
 // ===== 角色替换（character.rs） =====
 
 #[tauri::command]
@@ -266,6 +375,11 @@ pub fn run() {
             list_levels,
             save_levels,
             list_level_names,
+            is_game_available,
+            list_schematics,
+            read_circuit,
+            write_circuit,
+            verify_circuit,
             character_status,
             list_characters,
             create_character,
