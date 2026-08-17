@@ -1,0 +1,8 @@
+# Normalize line endings to LF for everything, except Windows-native scripts.
+# `text=auto` lets Git auto-detect binary vs text; `eol=lf` then forces LF on
+# the index for text files. Without this, opening files in a Windows editor
+# can silently flip the whole tree to CRLF on the next commit.
+* text=auto eol=lf
+
+# Windows batch files: CRLF is required for cmd.exe to parse them reliably.
+*.bat text eol=crlf
