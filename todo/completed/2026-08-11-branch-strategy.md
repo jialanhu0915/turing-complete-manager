@@ -1,10 +1,12 @@
 ---
 title: 分支状态盘点 + 战略决策（merge / 继续 / 搁置）
 date: 2026-08-11
-status: pending-user-decision
+status: done
+resolved: 2026-08-17
+decision: A (合并收尾)
 ---
 
-# 分支状态盘点 + 战略决策
+# 分支状态盘点 + 战略决策（merge / 继续 / 搁置）
 
 ## 三个分支的事实
 
@@ -111,5 +113,56 @@ master 文档是过时的：
 
 ## 待用户决策
 
-- [ ] 用户从 A / B / C 中选一个（或组合）
-- [ ] 决策后，把本文件移入 `todo/completed/`，按决策内容新建对应的 `todo/in_progress/` 任务
+- [x] ~~用户从 A / B / C 中选一个（或组合）~~ → **选 A**
+- [x] ~~决策后，把本文件移入 `todo/completed/`，按决策内容新建对应的 `todo/in_progress/` 任务~~
+
+---
+
+## 结果（2026-08-17 归档）
+
+**决策 A：合并收尾。** 已于 2026-08-15 前后完成实质执行（今天才形式归档）：
+
+### 合并落地
+
+`test/verify-cli` → `master` 共 **38 个 commit** fast-forward，全部已 push 到 `origin` (GitHub) 和 `gitee`。当前 HEAD：
+
+```
+1e847e4 (HEAD -> master, origin/master, gitee/master, gitee/HEAD)
+         chore: add .editorconfig to lock LF end-of-line at editor level
+c409dd2  chore: add .gitattributes to lock LF line endings
+8e418c4  refactor(ui,tauri): 撤前端电路测试视图 + test_circuit 命令，验证归入 test.exe CLI
+879df15  docs(sdk): M9 静态逆向调研（hook 可行性评估）+ SDK README + and_gate 示例
+         + byte_adder 已知限制
+1b22b56  fix(dll): 输出字段按 word_size 排序映射
+6db5116  feat(circuit): 字输入/输出支持位级连接
+209b6a3  fix(ui): 电路测试下拉框/结果深色模式适配
+4371bcd  fix(dll): 字符串 switch 的 case 也加 case 前缀
+982a560  fix(tauri): default-run
+c8071e4  feat(ui): 电路测试视图 + test_circuit + compile.dll 查找路径 + shim.dll 打包资源
+8abb43a  refactor: 重命名 verify → test
+dc49f55  fix(dll): DSL switch case 加 case 前缀（对齐 2026-08-11 compile.dll 方言）
+9cd53f5  docs(design): M8 mod SDK 设计
+deab5c0  refactor(sdk): 抽 circuit/dll 为独立 tc-mod-sdk crate
+17bd042  feat(circuit): 搬运 test/verify-cli 电路 SDK 代码
+         (circuit codec + dll 编译执行 + verify CLI + sim-shim 工具链)
+... (更早 23 commits: M8 SDK codec/dll 实现、sim-shim 工具链、fixtures 等)
+```
+
+### 主线副作用（决策时未明确，落地时一并清理）
+
+- **`verify` → `test` 重命名**（`8abb43a`）：跑关卡测试语义更准确，与 M7 import 校验区分；前端电路测试 UI 也撤了，验证入口收敛到 `test.exe` CLI
+- **DSL 方言对齐**（`dc49f55`、`4371bcd`）：compile.dll 2026-08-11 更新后 switch case 需 `case` 前缀；同步修了 `gen.rs` 4 处 + 字符串 switch 模板
+- **M9 静态逆向**（`879df15`）：从最初的"D-7 注入机制 = 选项 B"延伸到评估 hook 可行性，并入 SDK README
+- **`.gitattributes` + `.editorconfig`**（`c409dd2`、`1e847e4`）：合并过程中发现的 22496/22496 行 CRLF/LF 噪声，处理掉并锁住 LF
+
+### 后续衍生 / 待跟进
+
+- **byte_adder 连通性 bug**（仍在 `todo/planning/2026-08-15-byte-adder-connectivity.md`，`status: known-limitation`）—— 合并后的真实剩余 bug，不阻塞主线
+- **v0.4.0 发版** —— 决策文本说"发 v0.4.0"，但当前 Cargo.lock 还是 0.3.0（gitee 上 master HEAD 之前停在 `8b4f350 fix(tauri): 同步 Cargo.lock 版本 0.2.0 → 0.3.0`）。发版本身属于 housekeeping，需要时单独开 `todo/in_progress/` 任务
+- **D-5 LLM 闭环** —— 决策 A 没做，未来想做再开新分支
+
+### 相关
+
+- `docs/20-design/M8-mod-sdk.md`
+- `tc-mod-sdk/README.md`（Known limitations）
+- memory: [[branch-strategy-2026-08-11]] [[test-verify-cli-merge]]
