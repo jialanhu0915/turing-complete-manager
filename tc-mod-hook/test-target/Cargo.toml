@@ -1,0 +1,10 @@
+[package]
+name = "test-target"
+version = "0.1.0"
+edition = "2021"
+description = "Dummy Windows process for testing tc-mod-hook DLL injection. Loads compile.dll and sits waiting for an injector to target it."
+license = "MIT"
+publish = false
+
+[dependencies]
+libloading = "0.8"
