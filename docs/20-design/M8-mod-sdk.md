@@ -97,7 +97,7 @@ status: 已校准定位（2026-08-17：mod SDK 必需含 hook 能力；当前已
 | M8-2 | 验证：cargo check + codec round-trip + test CLI 实测 | ✅（and_gate / or_gate / not_gate / xor_gate / full_adder / bit_adder pass；byte_adder 已知限制） |
 | M8-3 | 前端验证 UI section | 🗑️ 撤销（2026-08-15）—— 验证归入 `test.exe` CLI，不通过前端 |
 | M8-4 | and_gate 起步示例 + README + byte_adder 已知限制记录 | ✅（cargo publish 暂停） |
-| **M8-5** | **`tc-mod-hook` crate —— 劫持 `compile.dll::compile` 改写游戏行为** | 🟡 **PoC 完成**（2026-08-19，commit 即将提交）。Trampoline 技术已端到端验证：拦截、参数透传、卸载恢复。下一步：注入器（`inject.exe`）+ 真实游戏进程 PoC。详见 `todo/in_progress/2026-08-19-M8-5-hook-poc.md` |
+| **M8-5** | **`tc-mod-hook` crate —— 劫持 `compile.dll::compile` 改写游戏行为** | ✅ **真实游戏 PoC 验证通过**（2026-08-19，`b0d2db1`）。`tc-mod-inject.exe` 把 DLL 推进真实 TC 进程；hook 装在 `compile.dll::compile` 真实地址（31 字节全 prologue patch，commit `b0d2db1`）；trampoline-back 调原 compile 维持游戏行为；用户手动跑关卡后 log 抓到 3 次调用（status=0 全成功），拿到真 DSL 指针 + machine code 指针。下一步：mod callback API + DSL dump 到文件。详见 `todo/in_progress/2026-08-19-M8-5-hook-poc.md` |
 
 ---
 
