@@ -32,6 +32,8 @@ dist-ssr
 /src-tauri/gen/
 /tc-mod-sdk/target/
 /tc-mod-sdk/Cargo.lock
+/tc-mod-hook/target/
+/tc-mod-hook/Cargo.lock
 
 # sim-shim: Nim C-ABI shim source (shim.nim → sim-shim/shim.dll) + circuit/test
 # fixtures (fixtures/*.data + test_si/*.si). Source is tracked; only the built

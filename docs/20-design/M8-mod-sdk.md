@@ -97,7 +97,7 @@ status: 已校准定位（2026-08-17：mod SDK 必需含 hook 能力；当前已
 | M8-2 | 验证：cargo check + codec round-trip + test CLI 实测 | ✅（and_gate / or_gate / not_gate / xor_gate / full_adder / bit_adder pass；byte_adder 已知限制） |
 | M8-3 | 前端验证 UI section | 🗑️ 撤销（2026-08-15）—— 验证归入 `test.exe` CLI，不通过前端 |
 | M8-4 | and_gate 起步示例 + README + byte_adder 已知限制记录 | ✅（cargo publish 暂停） |
-| **M8-5** | **`tc-mod-hook` crate —— 劫持 `compile.dll::compile` 改写游戏行为** | ❌ **必修**（mod SDK 核心能力；不交付则 SDK 仅是电路自动化工具，不算 mod 工具箱）。M9 已做可行性调研，PoC 待做 |
+| **M8-5** | **`tc-mod-hook` crate —— 劫持 `compile.dll::compile` 改写游戏行为** | 🟡 **PoC 完成**（2026-08-19，commit 即将提交）。Trampoline 技术已端到端验证：拦截、参数透传、卸载恢复。下一步：注入器（`inject.exe`）+ 真实游戏进程 PoC。详见 `todo/in_progress/2026-08-19-M8-5-hook-poc.md` |
 
 ---
 
