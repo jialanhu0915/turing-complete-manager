@@ -1,0 +1,21 @@
+[package]
+name = "tc-mod-hook"
+version = "0.1.0"
+edition = "2021"
+description = "Hook layer for Turing Complete mod SDK (M8-5). Hijacks compile.dll::compile in a running game process so mods can register compile-time callbacks."
+license = "MIT"
+
+[lib]
+# Both rlib (for tests / linked into main app) and cdylib (for DLL injection into game process)
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# Windows-only API. On non-Windows targets this crate compiles to an empty stub.
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_System_SystemServices",
+    "Win32_System_Diagnostics_Debug",
+] }
+
+[dev-dependencies]
