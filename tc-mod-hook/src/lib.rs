@@ -8,29 +8,18 @@
 //! `compile.dll::compile` so mods can register callbacks that observe or
 //! modify compile behavior.
 //!
-//! # What this PoC delivers
+//! # Modules
 //!
-//! - [`trampoline::install_inline_hook`] / [`trampoline::uninstall_inline_hook`]
-//!   — pure 14-byte x64 JMP trampoline. Saves original bytes, redirects
-//!   `target` → `replacement`, restores on uninstall.
-//! - `DllMain` (built as cdylib) — loads cleanly and announces attach. Real
-//!   hook installation (find `compile.dll`, resolve `compile`, install
-//!   trampoline) is **not** in this PoC; it requires a config handoff
-//!   mechanism (next phase).
-//!
-//! # What this PoC does NOT deliver (deferred)
-//!
-//! - DLL injection (`CreateRemoteThread` + `LoadLibrary`) — separate tool,
-//!   next phase.
-//! - Mod callback API (`Mod` trait, `PreCompile` / `PostCompile` pipeline) —
-//!   design phase.
-//! - Steam / anti-virus / Defender-false-positive mitigation — later.
+//! - [`trampoline`]: x64 inline JMP trampoline + variable patch sizes.
+//! - [`mod_api`]:    mod callback API (`Mod` trait, `CompileCtx`, registry).
+//! - [`logger_mod`]: example mod — hardcoded into the hook DLL for PoC.
+//! - [`dll`] (cfg(windows)): `DllMain` for the `cdylib` build.
 //!
 //! # Safety
 //!
 //! All hook functions are `unsafe` because:
 //! - They patch executable memory.
-//! - Caller must guarantee the target function's first 14 bytes can be safely
+//! - Caller must guarantee the target function's first N bytes can be safely
 //!   overwritten without crossing a branch instruction.
 //! - `replacement` must have the same calling convention as `target` so
 //!   registers / stack are compatible.
@@ -39,16 +28,20 @@
 
 #![cfg_attr(not(windows), allow(dead_code))]
 
-// Suppress the benign "linker stdout: creating .lib" message that MSVC
-// prints whenever we build a cdylib. This is informational only — the
-// linker is reporting it produced the import-library file alongside the
-// DLL, which is normal Windows behavior. Doesn't apply to non-Windows.
-#![cfg_attr(windows, allow(linker_messages))]
-
+pub mod logger_mod;
+pub mod mod_api;
 pub mod trampoline;
 
 #[cfg(windows)]
 mod dll;
 
 // Re-export the trampoline API at crate root for convenience.
-pub use trampoline::{install_inline_hook, uninstall_inline_hook, HookError, OriginalBytes};
+pub use trampoline::{
+    install_inline_hook, install_inline_hook_with_size, uninstall_inline_hook, OriginalBytes,
+};
+
+// Re-export the mod API surface.
+pub use mod_api::{
+    register_mod, registered_mod_names, run_post_compile_hooks, run_pre_compile_hooks,
+    CompileCtx, Mod, ModAction,
+};
