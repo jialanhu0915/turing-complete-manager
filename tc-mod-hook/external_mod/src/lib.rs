@@ -1,17 +1,20 @@
 //! Example external mod for `tc-mod-hook`.
 //!
-//! Built as a `cdylib`. Drop the resulting `.dll` into
-//! `%TEMP%\tc-mod-hook-mods\` and `tc-mod-hook`'s DllMain will:
-//! 1. `LoadLibraryW` it
-//! 2. `GetProcAddress` the exported `register_mods` symbol
-//! 3. Call `register_mods()`
+// **Important**: This crate intentionally does NOT depend on `tc-mod-hook`
+// in Cargo.toml. Mod authors who do create a hard dependency cause Windows
+//! to load a duplicate of `tc_mod_hook.dll` (Cargo copies it to
+//! `external_mod/target/release/deps/`), which creates two independent
+//! module instances — each with its own static state. The mod and the
+//! host's `MOD_REGISTRY` end up in different instances, so the mod's
+//! registration never reaches the hook. The dedup manifest marker then
+//! shows `registered mods: ["logger"]` only.
 //!
-//! `register_mods()` in turn looks up `tc_mod_hook_register_mod` (exported
-//! by `tc_mod_hook.dll`) via `GetModuleHandleW` + `GetProcAddress` and calls
-//! it with our pre/post callbacks + a pointer to our static state. From that
-//! point on, every `compile()` in the game process fires our callbacks.
-//!
-//! See `dll.rs` in `tc-mod-hook` for the host-side registration API.
+//! **The correct pattern** (used here):
+//! - Define local types with `#[repr(C)]` to match the host's layout
+//! - Declare the foreign function with `extern "C"` raw FFI
+//! - At runtime: `GetModuleHandleW("tc_mod_hook.dll")` + `GetProcAddress("tc_mod_hook_register_mod")` to
+//!   find the host's function. This uses the host's loaded instance — not
+//!   a duplicate.
 
 #![cfg(windows)]
 
@@ -22,36 +25,58 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tc_mod_hook::CompileCtx;
 use windows::core::PCSTR;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 
-/// Counter mod state — bumped every time our pre_compile callback fires.
-/// Stored as a static so the callback (a free function) can update it.
+/// Mirror of `tc_mod_hook::CompileCtx`. The layout MUST match — we use
+/// `#[repr(C)]` to ensure C-compatible field layout. This is what mod
+/// authors do: declare the data shape, not the Rust type.
+#[repr(C)]
+pub struct CompileCtx {
+    pub pid: u32,
+    pub seq: u32,
+    pub src_str_ptr: *const u8,
+    pub mode: i32,
+    pub flags: i32,
+    pub out_buf: *mut u8,
+    pub status: u32,
+    pub mc_len: u64,
+    pub mc_ptr_payload: *const u8,
+    pub entry_off: u32,
+}
+
+/// C-ABI signature for `tc_mod_hook_register_mod`. Must match the host's
+/// declaration in `tc-mod-hook/src/dll.rs`:
+///   pub unsafe extern "C" fn tc_mod_hook_register_mod(
+///       name: PCSTR,
+///       pre_fn: Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+///       post_fn: Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+///       user_data: *mut c_void,
+///   ) -> i32
+type RegisterFn = unsafe extern "C" fn(
+    PCSTR,
+    Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+    Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+    *mut core::ffi::c_void,
+) -> i32;
+
+/// Static counters for mod callbacks (per mod; useful for testing that
+/// callbacks fire correctly).
 static PRE_CALLS: AtomicU32 = AtomicU32::new(0);
 static POST_CALLS: AtomicU32 = AtomicU32::new(0);
 
 /// mod name shown in the SDK's registered_mods log.
 const NAME: &[u8] = b"external-mod\0";
 
-unsafe extern "C" fn my_pre(_user_data: *mut c_void, ctx: *const CompileCtx) -> i32 {
+unsafe extern "C" fn my_pre(_user_data: *mut core::ffi::c_void, _ctx: *const CompileCtx) -> i32 {
     PRE_CALLS.fetch_add(1, Ordering::SeqCst);
-    let ctx = unsafe { &*ctx };
-    let pid = ctx.pid;
-    let seq = ctx.seq;
-    let src_len = ctx.src_str().map(|s| s.len()).unwrap_or(0);
-
-    let _ = writeln_to_log(
-        pid,
-        format_args!(
-            "[external-mod][pre ] seq={} src_len={} mod={:?}",
-            seq, src_len, std::str::from_utf8(NAME).unwrap_or("?")
-        ),
-    );
     0 // Continue
 }
 
-unsafe extern "C" fn my_post(_user_data: *mut c_void, ctx: *const CompileCtx) -> i32 {
+unsafe extern "C" fn my_post(
+    _user_data: *mut core::ffi::c_void,
+    ctx: *const CompileCtx,
+) -> i32 {
     POST_CALLS.fetch_add(1, Ordering::SeqCst);
     let ctx = unsafe { &*ctx };
     let pid = ctx.pid;
@@ -74,16 +99,18 @@ unsafe extern "C" fn my_post(_user_data: *mut c_void, ctx: *const CompileCtx) ->
 /// `GetProcAddress` after `LoadLibraryW`.
 #[no_mangle]
 pub unsafe extern "C" fn register_mods() {
-    // Find tc_mod_hook.dll (already loaded into the game process).
+    // Find tc_mod_hook.dll (already loaded by inject.exe).
+    // GetModuleHandleW looks up by name across all loaded modules, returning
+    // the FIRST instance — typically the one inject.exe loaded directly.
     let hook_name: Vec<u16> = "tc_mod_hook.dll\0".encode_utf16().collect();
     let hook_module = unsafe {
         GetModuleHandleW(windows::core::PCWSTR(hook_name.as_ptr()))
     };
     let hook_module = match hook_module {
         Ok(h) => h,
-        Err(e) => {
-            // Can't find host DLL — log and bail.
-            eprintln!("[external_mod] GetModuleHandleW(tc_mod_hook.dll) failed: {}", e);
+        Err(_) => {
+            // Host DLL not found — game probably doesn't have the hook
+            // loaded. Silently fail (the mod just won't fire).
             return;
         }
     };
@@ -95,28 +122,18 @@ pub unsafe extern "C" fn register_mods() {
     };
     let proc = match proc {
         Some(p) => p,
-        None => {
-            eprintln!("[external_mod] GetProcAddress(tc_mod_hook_register_mod) failed");
-            return;
-        }
+        None => return,
     };
 
-    // Cast to the expected C-ABI signature.
-    type RegisterFn = unsafe extern "C" fn(
-        PCSTR,
-        Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
-        Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
-        *mut c_void,
-    ) -> i32;
     let register: RegisterFn = unsafe { std::mem::transmute(proc) };
-
-    let rc = unsafe { register(PCSTR(NAME.as_ptr()), Some(my_pre), Some(my_post), std::ptr::null_mut()) };
-
-    if rc == 0 {
-        eprintln!("[external_mod] registered with tc-mod-hook (pre/post hooks wired)");
-    } else {
-        eprintln!("[external_mod] registration failed (rc = {})", rc);
-    }
+    let _ = unsafe {
+        register(
+            PCSTR(NAME.as_ptr()),
+            Some(my_pre),
+            Some(my_post),
+            std::ptr::null_mut(),
+        )
+    };
 }
 
 // ---- logging helpers --------------------------------------------------------

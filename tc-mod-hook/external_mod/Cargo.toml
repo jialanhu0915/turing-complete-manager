@@ -2,16 +2,24 @@
 name = "external_mod"
 version = "0.1.0"
 edition = "2021"
-description = "Example external mod for tc-mod-hook. Loaded into the game process via LoadLibraryW + GetProcAddress(register_mods). Calls back into tc_mod_hook_register_mod (in the host tc_mod_hook.dll) to register itself with the SDK's mod registry."
+description = "Example external mod for tc-mod-hook. Loaded into the game process via LoadLibraryW + GetProcAddress(register_mods). Demonstrates the CORRECT pattern for mod authors: NO static dep on tc-mod-hook DLL (which would cause Windows to load a duplicate). Instead, the mod defines its own local CompileCtx layout (#[repr(C)]) and uses raw FFI."
 license = "MIT"
 publish = false
 
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
-tc-mod-hook = { path = "../" }
-windows = { version = "0.58", features = [
+# NO [dependencies] on tc-mod-hook. Mod authors should NOT statically link
+# to the host SDK DLL. Doing so causes Windows to load a duplicate
+# (via the deps/ copy), which means the mod and the host have separate
+# static state — mod registrations don't work.
+#
+# Instead, we declare the foreign function and types we need via raw FFI
+# declarations below. Layout is fixed by #[repr(C)] in tc-mod-hook.
+
+[dependencies.windows]
+version = "0.58"
+features = [
     "Win32_Foundation",
     "Win32_System_LibraryLoader",
-] }
+]
