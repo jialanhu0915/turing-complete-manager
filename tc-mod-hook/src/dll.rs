@@ -51,7 +51,7 @@ use std::ffi::c_void;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use windows::Win32::Foundation::{HANDLE, HINSTANCE};
@@ -68,6 +68,10 @@ use crate::trampoline::{install_inline_hook_with_size, OriginalBytes};
 /// Address of the trampoline-back buffer (allocated in DllMain).
 /// Set after hook install + trampoline-back setup. 0 = not set.
 static TRAMPOLINE_BACK_ADDR: AtomicUsize = AtomicUsize::new(0);
+
+/// Sequence number for dump files. Incremented per compile() invocation so
+/// each dump has a unique filename even when the same level is recompiled.
+static DUMP_SEQ: AtomicU32 = AtomicU32::new(0);
 
 /// Hook function installed on `compile.dll::compile`. Receives the same
 /// args as the original ABI:
@@ -89,6 +93,10 @@ unsafe extern "system" fn compile_hook(
 
     // ---- Pre: log args -----------------------------------------------------
     // src_str is NimStringV2: { i64 length, *mut [u8; 8..] payload_cap, payload[8..] }
+    // We log the length + pointer but do NOT dump DSL bytes to disk — the
+    // game ships its full DSL in `<install>/replay.nim` (79 MB, contains the
+    // stdlib prefix + every level's SimulatorRequest). Dumping it again
+    // would just duplicate that file.
     let (src_len, src_ptr) = if !src_str.is_null() {
         let len = *(src_str as *const i64);
         let ptr = *((src_str as *const u8).add(8) as *const *const u8);
@@ -96,6 +104,8 @@ unsafe extern "system" fn compile_hook(
     } else {
         (-1, 0)
     };
+
+    let seq = DUMP_SEQ.fetch_add(1, Ordering::SeqCst);
 
     let _ = writeln_to_log(
         &log_path,
@@ -121,7 +131,7 @@ unsafe extern "system" fn compile_hook(
         std::arch::asm!("mov rax, rcx", out("rax") _, in("rcx") out_buf);
     }
 
-    // ---- Post: log out_buf state ------------------------------------------
+    // ---- Post: log out_buf state + dump machine code ----------------------
     // out_buf layout (per compile-signature.md):
     //   0..8   u64  machine_code_length
     //   8..16  u64  machine_code_ptr
@@ -145,6 +155,12 @@ unsafe extern "system" fn compile_hook(
                 status, mc_len, mc_ptr, entry_off, err_ptr
             ),
         );
+
+        // Dump JIT machine code to disk. Same 8 MiB cap as DSL.
+        if status == 0 && mc_len > 0 && mc_len <= 8 * 1024 * 1024 && mc_ptr != 0 {
+            let mc_slice = std::slice::from_raw_parts(mc_ptr as *const u8, mc_len as usize);
+            let _ = std::fs::write(mc_dump_path(pid, seq), mc_slice);
+        }
 
         // If status indicates failure and err_msg_ptr is set, dump first 200
         // bytes of the error message (Nim string layout: { i64 len, ptr chars }).
@@ -183,6 +199,9 @@ pub unsafe extern "system" fn DllMain(
                     unix_now()
                 ),
             );
+
+            // 1b. Pre-create dump dirs (std::fs::write doesn't create parents).
+            let _ = std::fs::create_dir_all(temp_dir().join("tc-mod-hook-mc-dump"));
 
             // 2. Try to find compile.dll in this process.
             let compile_dll_name = wide_null("compile.dll");
@@ -352,6 +371,14 @@ fn marker_path(pid: u32) -> PathBuf {
 /// (pre + post).
 fn hook_log_path(pid: u32) -> PathBuf {
     temp_dir().join(format!("tc-mod-hook-{}-compile.log", pid))
+}
+
+/// Per-invocation machine-code dump path. Captures the JIT output of
+/// `compile()` so the operator can disassemble it (objdump / Ghidra).
+fn mc_dump_path(pid: u32, seq: u32) -> PathBuf {
+    temp_dir()
+        .join("tc-mod-hook-mc-dump")
+        .join(format!("{}-{}.bin", pid, seq))
 }
 
 fn temp_dir() -> PathBuf {
