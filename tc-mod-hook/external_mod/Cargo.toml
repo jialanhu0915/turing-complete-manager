@@ -1,0 +1,17 @@
+[package]
+name = "external_mod"
+version = "0.1.0"
+edition = "2021"
+description = "Example external mod for tc-mod-hook. Loaded into the game process via LoadLibraryW + GetProcAddress(register_mods). Calls back into tc_mod_hook_register_mod (in the host tc_mod_hook.dll) to register itself with the SDK's mod registry."
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tc-mod-hook = { path = "../" }
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+] }

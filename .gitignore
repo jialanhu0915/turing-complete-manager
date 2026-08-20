@@ -36,6 +36,8 @@ dist-ssr
 /tc-mod-hook/Cargo.lock
 /tc-mod-hook/test-target/target/
 /tc-mod-hook/test-target/Cargo.lock
+/tc-mod-hook/external_mod/target/
+/tc-mod-hook/external_mod/Cargo.lock
 
 # sim-shim: Nim C-ABI shim source (shim.nim → sim-shim/shim.dll) + circuit/test
 # fixtures (fixtures/*.data + test_si/*.si). Source is tracked; only the built

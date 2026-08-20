@@ -37,12 +37,13 @@ use std::ffi::c_void;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{HANDLE, HINSTANCE};
 use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
-use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Memory::{
     VirtualAlloc, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE,
 };
@@ -53,7 +54,7 @@ use windows::Win32::System::Threading::GetCurrentProcessId;
 
 use crate::logger_mod;
 use crate::mod_api::{
-    run_post_compile_hooks, run_pre_compile_hooks, CompileCtx, ModAction,
+    run_post_compile_hooks, run_pre_compile_hooks, CompileCtx, Mod, ModAction,
 };
 use crate::trampoline::{install_inline_hook_with_size, OriginalBytes};
 
@@ -64,6 +65,12 @@ static TRAMPOLINE_BACK_ADDR: AtomicUsize = AtomicUsize::new(0);
 /// Sequence number for SDK log + MC dump filenames. Incremented per
 /// `compile()` invocation so dumps don't collide.
 static DUMP_SEQ: AtomicU32 = AtomicU32::new(0);
+
+/// Guard against DllMain running twice for the same DLL load (we've
+/// observed this happen — possibly due to LoadLibraryW re-resolution
+/// from mod DLL imports). When set, the second call to DllMain
+/// DLL_PROCESS_ATTACH becomes a no-op.
+static DLL_PROCESS_ATTACH_DONE: AtomicBool = AtomicBool::new(false);
 
 /// compile.dll::compile prologue size, confirmed by disassembly:
 ///   12 bytes (8 callee-saved pushes) + 7 (sub $0x118) + 8 (movaps) + 4 (pxor)
@@ -217,6 +224,15 @@ pub unsafe extern "system" fn DllMain(
 ) -> i32 {
     match reason {
         DLL_PROCESS_ATTACH => {
+            debug_log(&format!("tc-mod-hook: DllMain(PROCESS_ATTACH) entering; static_addr={:p} prev_done={}",
+                &DLL_PROCESS_ATTACH_DONE as *const _,
+                DLL_PROCESS_ATTACH_DONE.load(Ordering::SeqCst)));
+            // Single-shot guard: prevent double install if Windows calls
+            // DllMain(PROCESS_ATTACH) twice (happens in some scenarios).
+            if DLL_PROCESS_ATTACH_DONE.swap(true, Ordering::SeqCst) {
+                debug_log("tc-mod-hook: DllMain(PROCESS_ATTACH) skipped (already done)");
+                return 1;
+            }
             let pid = unsafe { GetCurrentProcessId() };
             let marker_path = marker_path(pid);
 
@@ -304,8 +320,18 @@ pub unsafe extern "system" fn DllMain(
             // 6. Register built-in mods. Phase 1: hardcoded logger. Phase 2:
             //    will scan tc-mod-hook-mods/ and LoadLibraryW each *.dll.
             logger_mod::register();
-            let mods = crate::mod_api::registered_mod_names();
-            status_lines.push(format!("registered mods: {:?}", mods));
+            let loaded_external = load_external_mods();
+            let mut mods = crate::mod_api::registered_mod_names();
+            for m in &loaded_external {
+                if !mods.contains(m) {
+                    mods.push(m.clone());
+                }
+            }
+            status_lines.push(format!(
+                "registered mods: {:?} (external loaded: {})",
+                mods,
+                loaded_external.len()
+            ));
 
             // 7. Append status to marker file.
             let status = format!(
@@ -331,6 +357,173 @@ pub unsafe extern "system" fn DllMain(
         _ => return 0,
     }
     1 // TRUE
+}
+
+// ---- mod loading + cross-DLL register -------------------------------------
+
+/// C-ABI entry point that mod DLLs use to register themselves with this
+/// hook DLL's MOD_REGISTRY.
+///
+/// **Why this exists**: Rust static state (like `MOD_REGISTRY`) is NOT shared
+/// across DLLs. A mod DLL that links to tc-mod-hook would have its own copy
+/// of `MOD_REGISTRY` and registering with it would have no effect here.
+/// Mods must call THIS function (via `GetProcAddress`) to register with the
+/// hook DLL's actual registry.
+///
+/// `name` is a NUL-terminated UTF-8 string. The hook DLL copies it before
+/// returning, so the caller can free `name` immediately.
+///
+/// `pre_fn` / `post_fn` are C-ABI function pointers matching the signature
+/// `unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32`. They are
+/// invoked from `compile_hook` on every compile() call. The return value
+/// is interpreted as `0 = Continue`, non-zero = Abort.
+///
+/// `user_data` is an opaque pointer passed through to the callbacks
+/// unmodified. Mod DLLs use this to carry their own state pointer.
+#[no_mangle]
+pub unsafe extern "C" fn tc_mod_hook_register_mod(
+    name: PCSTR,
+    pre_fn: Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+    post_fn: Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+    user_data: *mut c_void,
+) -> i32 {
+    use std::ffi::CStr;
+
+    let name_cstr = match unsafe { CStr::from_ptr(name.0 as *const i8) }.to_str() {
+        Ok(s) => s.to_string(),
+        Err(_) => return 1,
+    };
+
+    let shim = Box::leak(Box::new(ModShim {
+        name: name_cstr,
+        pre: pre_fn,
+        post: post_fn,
+        user_data,
+    }));
+    crate::mod_api::register_mod(shim);
+    0 // success
+}
+
+/// Cross-DLL mod adapter. Built from raw fn pointers + user_data supplied
+/// by `tc_mod_hook_register_mod`.
+struct ModShim {
+    name: String,
+    pre: Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+    post: Option<unsafe extern "C" fn(*mut c_void, *const CompileCtx) -> i32>,
+    user_data: *mut c_void,
+}
+
+// SAFETY: ModShim contains only raw fn pointers and a String. The fn
+// pointers are C-ABI, so they don't carry Rust thread-safety concerns.
+// user_data is opaque (caller guarantees safety). We require the actual
+// mod to be Send + Sync via its own implementation.
+unsafe impl Send for ModShim {}
+unsafe impl Sync for ModShim {}
+
+impl Mod for ModShim {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn pre_compile(&self, ctx: &CompileCtx) -> ModAction {
+        match self.pre {
+            None => ModAction::Continue,
+            Some(f) => {
+                let r = unsafe { f(self.user_data, ctx as *const CompileCtx) };
+                if r == 0 {
+                    ModAction::Continue
+                } else {
+                    ModAction::Abort
+                }
+            }
+        }
+    }
+
+    fn post_compile(&self, ctx: &CompileCtx) -> ModAction {
+        match self.post {
+            None => ModAction::Continue,
+            Some(f) => {
+                let r = unsafe { f(self.user_data, ctx as *const CompileCtx) };
+                if r == 0 {
+                    ModAction::Continue
+                } else {
+                    ModAction::Abort
+                }
+            }
+        }
+    }
+}
+
+/// Scan `%TEMP%\tc-mod-hook-mods\*.dll`, LoadLibraryW each, call their
+/// exported `register_mods()` function. Returns names of mods that
+/// successfully registered (their names come from the DLL's `register_mods`
+/// calling `tc_mod_hook_register_mod`).
+fn load_external_mods() -> Vec<String> {
+    let mods_dir = temp_dir().join("tc-mod-hook-mods");
+    if !mods_dir.exists() {
+        return Vec::new();
+    }
+
+    let entries = match std::fs::read_dir(&mods_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+
+    let before = registered_mod_names_snapshot();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("dll") {
+            continue;
+        }
+
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => continue,
+        };
+
+        // LoadLibraryW + GetProcAddress
+        let wide_path: Vec<u16> = path_str
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let module = unsafe { LoadLibraryW(windows::core::PCWSTR(wide_path.as_ptr())) };
+        if let Err(e) = module {
+            debug_log(&format!("tc-mod-hook: LoadLibraryW({}) failed: {}", path_str, e));
+            continue;
+        }
+        let module = module.unwrap();
+
+        let proc_name = b"register_mods\0";
+        let proc = unsafe {
+            GetProcAddress(module, PCSTR(proc_name.as_ptr()))
+        };
+        let proc = match proc {
+            Some(p) => p,
+            None => {
+                debug_log(&format!(
+                    "tc-mod-hook: {} has no register_mods export",
+                    path_str
+                ));
+                continue;
+            }
+        };
+
+        let register_mods: unsafe extern "C" fn() = unsafe { std::mem::transmute(proc) };
+        unsafe { register_mods() };
+
+        debug_log(&format!("tc-mod-hook: called register_mods in {}", path_str));
+    }
+
+    // Compute "newly registered" mod names by diffing before/after snapshots.
+    let after = registered_mod_names_snapshot();
+    after.into_iter().filter(|n| !before.contains(n)).collect()
+}
+
+/// Snapshot the registered mod names. Locks the registry briefly.
+fn registered_mod_names_snapshot() -> Vec<String> {
+    crate::mod_api::registered_mod_names()
 }
 
 // ---- trampoline-back helpers ------------------------------------------------
